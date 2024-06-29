@@ -3,6 +3,7 @@ import datetime
 import numpy as np
 import itertools
 import torch
+import sys
 from sac.sac import SAC
 from torch.utils.tensorboard import SummaryWriter
 from sac.replay_memory import ReplayMemory
@@ -52,15 +53,19 @@ parser.add_argument('--cuda', action="store_true",
 args = parser.parse_args()
 
 # Environment
-task_num = system_config['F']
-maxp = system_config['maxp']
-task_utils = load_data('./data/task'+str(task_num)+'_utils.csv')
+task_num = system_config['F']  # 任务数
+maxp = system_config['maxp']   # 最大转移概率
+
+task_utils = load_data('./data/task'+str(task_num)+'_utils.csv') # 任务信息[I, O, w]
 # task_utils = load_data('./data/task'+str(task_num)+'_utils_output15000.csv')
 task_set_ = task_utils.tolist()
-At = np.squeeze(load_data('data/samples'+str(task_num)+'_maxp'+str(maxp)+'.csv'))
-# channel_snrs = load_data('./data/one_snrs.csv')
-channel_snrs = load_data('./data/dynamic_snrs.csv')
 
+At = np.squeeze(load_data('data/samples'+str(task_num)+'_maxp'+str(maxp)+'.csv')) # 任务请求
+# channel_snrs = load_data('./data/one_snrs.csv')
+
+channel_snrs = load_data('./data/dynamic_snrs.csv') # 信噪比
+
+# 任务缓存状态S^I, S^O、任务集、任务请求、信噪比
 env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=At,
                     channel_snrs=channel_snrs, exp_case=args.exp_case)
 # env.seed(args.seed)

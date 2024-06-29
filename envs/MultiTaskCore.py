@@ -15,13 +15,13 @@ sys.path.insert(0, parent_dir)
 from config import chip_config, system_config, best_fDs
 from tool.data_loader import load_data
 
-tau = chip_config['tau']
-fD = chip_config['fD']
-u = chip_config['u']
-num_core = system_config['M']
+tau = chip_config['tau'] # 最大容忍延迟
+fD = chip_config['fD'] # 单核计算频率
+u = chip_config['u'] # μ
+num_core = system_config['M'] 
 num_task = system_config['F']
 Cache = chip_config['C']
-weight = system_config['weight']
+weight = system_config['weight'] 
 
 MAX_STEPS = 2000
 
@@ -71,8 +71,10 @@ class MultiTaskCore(object):
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
 
+        # 系统动作上下限
         self.sample_low = np.asarray([-1] * (3 * num_task + 1))
         self.sample_high = np.asarray([1] * (3 * num_task + 1))
+        # 系统状态上下限
         self.observe_low = np.asarray([0] * (2 * num_task) + [0])
         self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1])
         self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float16)
@@ -112,11 +114,11 @@ class MultiTaskCore(object):
             ob (object) :
                 an environment-specific object representing your observation of
                 the environment.
-            reward (float) :
+            reward (float) : 上一次动作的奖励
                 amount of reward achieved by the previous action. The scale
                 varies between environments, but the goal is always to increase
                 your total reward.
-            episode_over (bool) :
+            episode_over (bool) : 是否重置环境
                 whether it's time to reset the environment again. Most (but not
                 all) tasks are divided up into well-defined episodes, and done
                 being True indicates the episode has terminated. (For example,
