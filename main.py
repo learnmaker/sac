@@ -97,6 +97,7 @@ for i_episode in itertools.count(1):
     state = env.reset()
 
     while not done:
+        # 前start_steps随机探索
         if args.start_steps > total_numsteps:
             action = env.action_space.sample()  # Sample random action
         else:

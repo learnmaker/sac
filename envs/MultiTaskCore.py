@@ -77,8 +77,8 @@ class MultiTaskCore(object):
         # 系统状态上下限
         self.observe_low = np.asarray([0] * (2 * num_task) + [0])
         self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1])
-        self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float16)
-        self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float16)
+        self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float16) # 系统动作空间
+        self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float16) # 系统状态空间
 
         # [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
         if self.exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
@@ -175,6 +175,7 @@ class MultiTaskCore(object):
         """Render the environment to the screen"""
         print(f'Step: {self.global_step}')
 
+    # 将环境的状态值进行缩放
     def calc_observation(self, action):
         """
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
@@ -206,6 +207,7 @@ class MultiTaskCore(object):
 
         return B_R + B_P + (E_R + E_P) * weight, [B_R + B_P, E_R + E_P], [B_R, B_P, E_R, E_P]
 
+    # 样本到动作空间
     def sample2action(self, action):
         unit = [2.0 / (self.action_high[idx] - self.action_low[idx] + 1) for idx in range(len(self.action_high))]
         rescale_action = []
@@ -215,7 +217,8 @@ class MultiTaskCore(object):
             prob_action.append((elem + 1) / 2)
 
         return rescale_action, prob_action
-
+    
+    # 动作空间到样本
     def action2sample(self, action):
         unit = [2.0 / (self.action_high[idx] - self.action_low[idx] + 1) for idx in range(len(self.action_high))]
         sample = []
@@ -255,6 +258,7 @@ class MultiTaskCore(object):
             assert 0 <= (S_I + dS_I) <= 1 and 0 <= (S_O + dS_O) <= 1
 
         return np.array(next_state)
+
 
     def check_action_validity(self, action, prob_action):
         """
