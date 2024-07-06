@@ -11,84 +11,123 @@ from envs.MultiTaskCore import MultiTaskCore
 from tool.data_loader import load_data
 from config import system_config
 
+
 # 命令行参数设置
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
+
+# 环境名称
 parser.add_argument('--env-name', default="MultiTaskCore",
                     help='Wireless Comm environment (default: MultiTaskCore)')
+# 实验配置
 parser.add_argument('--exp-case', default="case3",
                     help='The experiment configuration case (default: case 3)')
+# 策略类型
 parser.add_argument('--policy', default="Gaussian",
                     help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
+# 每10次评估一次策略
 parser.add_argument('--eval', type=bool, default=True,
                     help='Evaluates a policy a policy every 10 episode (default: True)')
+# 折现因子
 parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                     help='discount factor for reward (default: 0.99)')
+# 目标平滑系数 θi_bar = ξ * θi + (1 - ξ) * θi_bar
 parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                     help='target smoothing coefficient(τ) (default: 0.005)')
+# 学习率
 parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
                     help='learning rate (default: 0.0003)')
+# 熵前面的温度系数
 parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                     help='Temperature parameter α determines the relative importance of the entropy\
                             term against the reward (default: 0.2)')
+# 熵前面的系数是否自动调整
 parser.add_argument('--automatic_entropy_tuning', type=bool, default=False, metavar='G',
                     help='Automaically adjust α (default: False)')
+# 随机种子
 parser.add_argument('--seed', type=int, default=123456, metavar='N',
                     help='random seed (default: 123456)')
+# 抽样大小
 parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                     help='batch size (default: 256)')
+# 最大训练步数
 parser.add_argument('--num_steps', type=int, default=5000001, metavar='N',
                     help='maximum number of steps (default: 5000001)')
+# 隐藏层大小
 parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                     help='hidden size (default: 256)')
+# 每次更新参数采样多少次
 parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                     help='model updates per simulator step (default: 1)')
+# 多少次随机采样
 parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
                     help='Steps sampling1 random actions (default: 10000)')
+# 目标网络的更新周期
 parser.add_argument('--target_update_interval', type=int, default=1000, metavar='N',
                     help='Value target update per no. of updates per step (default: 1000)')
+# 经验缓冲区大小
 parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 10000000)')
+# 是否使用cuda
 parser.add_argument('--cuda', action="store_true",
                     help='run on CUDA (default: False)')
-parser.add_argument('--agent_num', type=int, default=1, 
-                    help='agent number(default: 1)')
+# 服务器个数
+parser.add_argument('--server_num', type=int, default=2,
+                    help='server number(default: 1)')
+# 每个服务器的用户设备个数
+parser.add_argument('--ud_num', type=int, default=3,
+                    help='user device number(default: 1)')
+
 args = parser.parse_args()
 
-# Environment
+
+# 环境设置
 task_num = system_config['F']  # 任务数
 maxp = system_config['maxp']   # 最大转移概率
 
-task_utils = load_data('./data/task'+str(task_num)+'_utils.csv') # 任务集信息[I, O, w，τ]
+task_utils = load_data('./data/task'+str(task_num) +
+                       '_utils.csv')  # 任务集信息[I, O, w，τ]
 # task_utils = load_data('./data/task'+str(task_num)+'_utils_output15000.csv')
 task_set_ = task_utils.tolist()
 
-At = np.squeeze(load_data('data/samples'+str(task_num)+'_maxp'+str(maxp)+'.csv')) # 任务请求
+At = np.squeeze(load_data('data/samples'+str(task_num) +
+                '_maxp'+str(maxp)+'.csv'))  # 任务请求
 # channel_snrs = load_data('./data/one_snrs.csv')
 
-channel_snrs = load_data('./data/dynamic_snrs.csv') # 信噪比
+channel_snrs = load_data('./data/dynamic_snrs.csv')  # 信噪比
 
 # 任务缓存状态S^I, S^O、任务集、任务请求、信噪比
 env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=At,
                     channel_snrs=channel_snrs, exp_case=args.exp_case)
 # env.seed(args.seed)
+
 env.action_space.seed(args.seed)
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
-# Agent
+# 系统建模
+# Center Manager(保存用户设备的任务请求)
+CM = np.full((args.server_num, args.ud_num), -1)
+
+# 服务器
+servers = np.full((args.server_num, task_num))
+
+# 用户设备Agents (server_num * ud_num)
 # agent = SAC(env.observation_space.shape[0], env.action_space, args)
-agents = [SAC(env.observation_space.shape[0], env.action_space, args) for _ in range(args.num_agents)]
+agents = [SAC(env.observation_space.shape[0], env.action_space, args)
+          for _ in range(args.server_num * args.ud_num)]
+
 
 # Tensorboard
 writer = SummaryWriter(
     'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
                                   args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
-# Memory
+# 经验缓存区 (server_num * ud_num)
 # memory = ReplayMemory(args.replay_size, args.seed)
-memories = [ReplayMemory(args.replay_size, args.seed) for _ in range(args.num_agents)]
+memories = [ReplayMemory(args.replay_size, args.seed)
+            for _ in range(args.server_num * args.ud_num)]
 
-# Training Loop
+# 训练
 total_numsteps = 0
 updates = 0
 result_trans = []
@@ -100,13 +139,17 @@ for i_episode in itertools.count(1):
     done = False
     state = env.reset()
 
+    # 训练到结束状态
     while not done:
-        # 前start_steps随机探索
+        # 对每个agent进行一次训练
         for agent, memory in zip(agents, memories):
+            # 前start_steps随机探索
             if args.start_steps > total_numsteps:
-                action = env.action_space.sample()  # Sample random action
+                # Sample random action
+                action = env.action_space.sample()
             else:
-                action = agent.select_action(state)  # Sample action from policy
+                # Sample action from policy
+                action = agent.select_action(state)
 
             if len(memory) > args.batch_size:
                 # Number of updates per step in environment
@@ -118,20 +161,23 @@ for i_episode in itertools.count(1):
                     writer.add_scalar('loss/critic_2', critic_2_loss, updates)
                     writer.add_scalar('loss/policy', policy_loss, updates)
                     writer.add_scalar('loss/entropy_loss', ent_loss, updates)
-                    writer.add_scalar('entropy_temprature/alpha', alpha, updates)
+                    writer.add_scalar(
+                        'entropy_temprature/alpha', alpha, updates)
                     updates += 1
 
             next_state, reward, done, info = env.step(action)  # Step
             episode_steps += 1
             total_numsteps += 1
             episode_reward += reward
-        
+
         # Ignore the "done" signal if it comes from hitting the time horizon.
         # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
-        mask = 1 if episode_steps == env._max_episode_steps else float(not done)
-        memory.push(state, action, reward, next_state, mask)  # Append transition to memory
+        mask = 1 if episode_steps == env._max_episode_steps else float(
+            not done)
+        memory.push(state, action, reward, next_state, mask)
         state = next_state
 
+    # 大于最大训练次数，退出
     if total_numsteps > args.num_steps:
         break
 
@@ -139,6 +185,8 @@ for i_episode in itertools.count(1):
     print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps,
                                                                                   episode_steps,
                                                                                   round(episode_reward, 2)))
+    
+    # 每10个轮次评估模型的好坏
     eval_freq = 10
     # eval_freq = 1
     if i_episode % eval_freq == 0 and args.eval is True:
@@ -181,6 +229,8 @@ for i_episode in itertools.count(1):
         print("----------------------------------------")
         result_trans.append(avg_trans_cost)
         result_comp.append(avg_compute_cost)
+        
+        
         if len(result_trans) > 10:
             print_avg_trans = np.average(np.asarray(result_trans[-10:]))
             print_avg_comp = np.average(np.asarray(result_comp[-10:]))
@@ -190,8 +240,10 @@ for i_episode in itertools.count(1):
         print("Final Avg Results for last 100 epoches: Avg. Trans Cost: {}, Avg. Compute Cost: {}".format(
             round(print_avg_trans, 2), round(print_avg_comp, 2)))
         print("----------------------------------------")
-        writer.add_scalar('avg_cost/trans_cost', round(print_avg_trans, 2), i_episode)
-        writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
+        writer.add_scalar('avg_cost/trans_cost',
+                          round(print_avg_trans, 2), i_episode)
+        writer.add_scalar('avg_cost/comp_cost',
+                          round(print_avg_comp, 2), i_episode)
         # raise
 
 # env.close()

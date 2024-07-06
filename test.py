@@ -1,1 +1,2 @@
-print([4] + [0] * (3 * 4))
+print()
+sys.exit()
