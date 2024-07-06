@@ -50,13 +50,15 @@ parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                     help='size of replay buffer (default: 10000000)')
 parser.add_argument('--cuda', action="store_true",
                     help='run on CUDA (default: False)')
+parser.add_argument('--agent_num', type=int, default=1, 
+                    help='agent number(default: 1)')
 args = parser.parse_args()
 
 # Environment
 task_num = system_config['F']  # 任务数
 maxp = system_config['maxp']   # 最大转移概率
 
-task_utils = load_data('./data/task'+str(task_num)+'_utils.csv') # 任务信息[I, O, w]
+task_utils = load_data('./data/task'+str(task_num)+'_utils.csv') # 任务集信息[I, O, w，τ]
 # task_utils = load_data('./data/task'+str(task_num)+'_utils_output15000.csv')
 task_set_ = task_utils.tolist()
 
@@ -74,7 +76,8 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
 # Agent
-agent = SAC(env.observation_space.shape[0], env.action_space, args)
+# agent = SAC(env.observation_space.shape[0], env.action_space, args)
+agents = [SAC(env.observation_space.shape[0], env.action_space, args) for _ in range(args.num_agents)]
 
 # Tensorboard
 writer = SummaryWriter(
@@ -82,7 +85,8 @@ writer = SummaryWriter(
                                   args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
 # Memory
-memory = ReplayMemory(args.replay_size, args.seed)
+# memory = ReplayMemory(args.replay_size, args.seed)
+memories = [ReplayMemory(args.replay_size, args.seed) for _ in range(args.num_agents)]
 
 # Training Loop
 total_numsteps = 0
@@ -98,29 +102,30 @@ for i_episode in itertools.count(1):
 
     while not done:
         # 前start_steps随机探索
-        if args.start_steps > total_numsteps:
-            action = env.action_space.sample()  # Sample random action
-        else:
-            action = agent.select_action(state)  # Sample action from policy
+        for agent, memory in zip(agents, memories):
+            if args.start_steps > total_numsteps:
+                action = env.action_space.sample()  # Sample random action
+            else:
+                action = agent.select_action(state)  # Sample action from policy
 
-        if len(memory) > args.batch_size:
-            # Number of updates per step in environment
-            for i in range(args.updates_per_step):
-                # Update parameters of all the networks
-                critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
-                    memory, args.batch_size, updates)
-                writer.add_scalar('loss/critic_1', critic_1_loss, updates)
-                writer.add_scalar('loss/critic_2', critic_2_loss, updates)
-                writer.add_scalar('loss/policy', policy_loss, updates)
-                writer.add_scalar('loss/entropy_loss', ent_loss, updates)
-                writer.add_scalar('entropy_temprature/alpha', alpha, updates)
-                updates += 1
+            if len(memory) > args.batch_size:
+                # Number of updates per step in environment
+                for i in range(args.updates_per_step):
+                    # Update parameters of all the networks
+                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
+                        memory, args.batch_size, updates)
+                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
+                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
+                    writer.add_scalar('loss/policy', policy_loss, updates)
+                    writer.add_scalar('loss/entropy_loss', ent_loss, updates)
+                    writer.add_scalar('entropy_temprature/alpha', alpha, updates)
+                    updates += 1
 
-        next_state, reward, done, info = env.step(action)  # Step
-        episode_steps += 1
-        total_numsteps += 1
-        episode_reward += reward
-
+            next_state, reward, done, info = env.step(action)  # Step
+            episode_steps += 1
+            total_numsteps += 1
+            episode_reward += reward
+        
         # Ignore the "done" signal if it comes from hitting the time horizon.
         # (https://github.com/openai/spinningup/blob/master/spinup/algos/sac/sac.py)
         mask = 1 if episode_steps == env._max_episode_steps else float(not done)
