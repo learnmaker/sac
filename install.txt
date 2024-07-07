@@ -1,0 +1,7 @@
+python main.py --automatic_entropy_tuning True --target_update_interval 1000 --lr 1e-4 --exp-case case3 --cuda
+
+conda install numpy
+conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
+conda install pandas
+conda install tensorboard
+conda install gym
