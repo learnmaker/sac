@@ -15,7 +15,7 @@ sys.path.insert(0, parent_dir)
 from config import chip_config, system_config, best_fDs
 from tool.data_loader import load_data
 
-tau = chip_config['tau'] # 最大容忍延迟
+tau = chip_config['tau'] # 最大容忍延迟 τ
 fD = chip_config['fD'] # 单核计算频率
 u = chip_config['u'] # μ
 num_core = system_config['M'] 
@@ -32,8 +32,8 @@ class MultiTaskCore(object):
 
     def __init__(
             self,
-            init_sys_state,  # initiated system state, S^I, S^O for each task, plus A(0) in range [0, n_task-1]
-            task_set,  # a list of n_actions sublist, for each sublist it is [I, O, w]
+            init_sys_state,  # 初始系统状态, S^I, S^O for each task, plus A(0) in range [0, n_task-1]
+            task_set,  # 任务集信息, for each sublist it is [I, O, w]
             requests,  # the request task samples
             channel_snrs,   # a list of snr value of the channel
             exp_case='case3',  # the experiment configuration, default the solution with proactive transmission
@@ -259,12 +259,12 @@ class MultiTaskCore(object):
 
         return np.array(next_state)
 
-
+    # 
     def check_action_validity(self, action, prob_action):
         """
         Input:
-            action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
-            sys_state: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1]
+            action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)] 计算核数、主动传输、缓存更新
+            sys_state: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1] 缓存状态、请求任务
         Constraints:
             1) I(f) * w(f) / tau <= M * fD     # system constraint (not check here)
             2) I(At) * w(At) / tau <= C_R(At) * fD,     when S_O(At)=0
@@ -422,6 +422,7 @@ class MultiTaskCore(object):
         else:
             return True, action
 
+    # 检测是否超过缓存容量
     def test_cache_exceed(self, I_f, O_f, S_I_f, S_O_f, dS_I_f, dS_O_f):
         sum_cache = np.sum(np.asarray(I_f) * (np.asarray(S_I_f) + np.asarray(dS_I_f)) +
                            np.asarray(O_f) * (np.asarray(S_O_f) + np.asarray(dS_O_f)))

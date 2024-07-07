@@ -5,6 +5,8 @@ import itertools
 import torch
 import sys
 from sac.sac import SAC
+from tool.generate_snrs import generate_snrs
+# from tool.samples_from_transmat import samples_from_transmat
 from torch.utils.tensorboard import SummaryWriter
 from sac.replay_memory import ReplayMemory
 from envs.MultiTaskCore import MultiTaskCore
@@ -81,21 +83,27 @@ args = parser.parse_args()
 
 
 # 环境设置
-task_num = system_config['F']  # 任务数
-maxp = system_config['maxp']   # 最大转移概率
+task_num = system_config['F']  # 任务数 6
+maxp = system_config['maxp']   # 最大转移概率 70%
 
-task_utils = load_data('./data/task'+str(task_num) +
-                       '_utils.csv')  # 任务集信息[I, O, w，τ]
+# 任务集信息[I, O, w，τ]
+task_utils = load_data('./mydata/task'+str(task_num) + '_utils.csv')
 # task_utils = load_data('./data/task'+str(task_num)+'_utils_output15000.csv')
 task_set_ = task_utils.tolist()
 
-At = np.squeeze(load_data('data/samples'+str(task_num) +
-                '_maxp'+str(maxp)+'.csv'))  # 任务请求
-# channel_snrs = load_data('./data/one_snrs.csv')
+# # 任务请求 (server_num * ud_num)
+# At = np.squeeze(load_data('data/samples'+str(task_num) + '_maxp'+str(maxp)+'.csv'))
+# # channel_snrs = load_data('./data/one_snrs.csv')
 
-channel_snrs = load_data('./data/dynamic_snrs.csv')  # 信噪比
+# # 信噪比
+# channel_snrs = load_data('./data/dynamic_snrs.csv')  
 
-# 任务缓存状态S^I, S^O、任务集、任务请求、信噪比
+#  跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
+generate_snrs(args.server_num) # 生成信噪比
+
+sys.exit()
+
+# 任务缓存状态S^I, S^O, A(0)、任务信息、任务请求、信噪比
 env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=At,
                     channel_snrs=channel_snrs, exp_case=args.exp_case)
 # env.seed(args.seed)
@@ -108,14 +116,13 @@ np.random.seed(args.seed)
 # Center Manager(保存用户设备的任务请求)
 CM = np.full((args.server_num, args.ud_num), -1)
 
-# 服务器
-servers = np.full((args.server_num, task_num))
+# 服务器 (存储所有缓存信息)
+servers = [np.full((args.server_num, task_num), 0) for _ in range(args.server_num)]
 
 # 用户设备Agents (server_num * ud_num)
 # agent = SAC(env.observation_space.shape[0], env.action_space, args)
 agents = [SAC(env.observation_space.shape[0], env.action_space, args)
           for _ in range(args.server_num * args.ud_num)]
-
 
 # Tensorboard
 writer = SummaryWriter(
