@@ -6,7 +6,7 @@ import torch
 import sys
 from sac.sac import SAC
 from tool.generate_snrs import generate_snrs
-# from tool.samples_from_transmat import samples_from_transmat
+from tool.samples_from_transmat import generate_request
 from torch.utils.tensorboard import SummaryWriter
 from sac.replay_memory import ReplayMemory
 from envs.MultiTaskCore import MultiTaskCore
@@ -74,41 +74,51 @@ parser.add_argument('--cuda', action="store_true",
                     help='run on CUDA (default: False)')
 # 服务器个数
 parser.add_argument('--server_num', type=int, default=2,
-                    help='server number(default: 1)')
+                    help='server number(default: 2)')
 # 每个服务器的用户设备个数
 parser.add_argument('--ud_num', type=int, default=3,
-                    help='user device number(default: 1)')
+                    help='user device number(default: 3)')
 
 args = parser.parse_args()
 
 
 # 环境设置
-task_num = system_config['F']  # 任务数 6
+task_num = args.server_num * args.ud_num  # 任务数 6 ( 2 server * 3 user )
 maxp = system_config['maxp']   # 最大转移概率 70%
 
 # 任务集信息[I, O, w，τ]
-task_utils = load_data('./mydata/task'+str(task_num) + '_utils.csv')
-# task_utils = load_data('./data/task'+str(task_num)+'_utils_output15000.csv')
+task_utils = load_data('./mydata/task_info/task'+str(task_num) + '_utils.csv')
 task_set_ = task_utils.tolist()
-
-# # 任务请求 (server_num * ud_num)
-# At = np.squeeze(load_data('data/samples'+str(task_num) + '_maxp'+str(maxp)+'.csv'))
-# # channel_snrs = load_data('./data/one_snrs.csv')
-
-# # 信噪比
-# channel_snrs = load_data('./data/dynamic_snrs.csv')  
 
 #  跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
 generate_snrs(args.server_num) # 生成信噪比
+generate_request(args.server_num, args.ud_num, task_num, maxp) # 生成任务请求
 
-sys.exit()
+channel_snrs = []
+for i in range(args.server_num):
+    snr=load_data('./mydata/temp/dynamic_snrs_'+str(i+1)+'.csv').T
+    channel_snrs.append(snr)
 
-# 任务缓存状态S^I, S^O, A(0)、任务信息、任务请求、信噪比
-env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=At,
-                    channel_snrs=channel_snrs, exp_case=args.exp_case)
-# env.seed(args.seed)
+Ats = []
+for server in range(args.server_num):
+    s_uds=[]
+    for ud in range(args.ud_num):
+        At=load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1)+"_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").T
+        s_uds.append(At)
+    Ats.append(s_uds)
 
-env.action_space.seed(args.seed)
+# 任务缓存状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比 (server_num * ud_num)
+envs=[]
+for server in range(args.server_num):
+    s_envs=[]
+    for ud in range(args.ud_num):
+        env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=Ats[server][ud],
+                    channel_snrs=channel_snrs[server], exp_case=args.exp_case)
+        # env.seed(args.seed)
+        env.action_space.seed(args.seed)
+        s_envs.append(env)
+    envs.append(s_envs)
+
 torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 
@@ -116,23 +126,31 @@ np.random.seed(args.seed)
 # Center Manager(保存用户设备的任务请求)
 CM = np.full((args.server_num, args.ud_num), -1)
 
-# 服务器 (存储所有缓存信息)
-servers = [np.full((args.server_num, task_num), 0) for _ in range(args.server_num)]
+# 服务器 (存储全局缓存信息)
+servers = [np.full((args.ud_num, task_num), [0,0]) for _ in range(args.server_num)]
 
 # 用户设备Agents (server_num * ud_num)
-# agent = SAC(env.observation_space.shape[0], env.action_space, args)
-agents = [SAC(env.observation_space.shape[0], env.action_space, args)
-          for _ in range(args.server_num * args.ud_num)]
+agents = []
+for server in range(args.server_num):
+    s_agent=[]
+    for ud in range(args.ud_num):
+        agent = SAC(envs[server][ud].observation_space.shape[0], envs[server][ud].action_space, args)
+        s_agent.append(agent)
+    agents.append(s_agent)
+    
+# 经验缓存区 (server_num * ud_num)
+memories=[]
+for server in range(args.server_num):
+    s_memory=[]
+    for ud in range(args.ud_num):
+        memory = ReplayMemory(args.replay_size, args.seed)
+        s_memory.append(memory)
+    memories.append(s_memory)
 
 # Tensorboard
 writer = SummaryWriter(
     'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
                                   args.policy, "autotune" if args.automatic_entropy_tuning else ""))
-
-# 经验缓存区 (server_num * ud_num)
-# memory = ReplayMemory(args.replay_size, args.seed)
-memories = [ReplayMemory(args.replay_size, args.seed)
-            for _ in range(args.server_num * args.ud_num)]
 
 # 训练
 total_numsteps = 0
