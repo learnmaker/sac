@@ -12,11 +12,11 @@ from sac.replay_memory import ReplayMemory
 from envs.MultiTaskCore import MultiTaskCore
 from tool.data_loader import load_data
 from config import system_config
+from multiprocessing import Process, Pipe, Manager
 
 
 # 命令行参数设置
 parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
-
 # 环境名称
 parser.add_argument('--env-name', default="MultiTaskCore",
                     help='Wireless Comm environment (default: MultiTaskCore)')
@@ -83,17 +83,26 @@ args = parser.parse_args()
 
 
 # 环境设置
-task_num = args.server_num * args.ud_num  # 任务数 6 ( 2 server * 3 user )
+torch.manual_seed(args.seed)
+np.random.seed(args.seed)
+
+# 中央管理器(保存所有用户设备的任务请求，2 * 3 二维矩阵)
+CM = np.full((args.server_num, args.ud_num), -1)
+
+# 服务器 (每台服务器存储全局缓存信息，2 * 3 * 6 * 2)
+task_num = system_config['F']  # 任务数 6
 maxp = system_config['maxp']   # 最大转移概率 70%
-
-# 任务集信息[I, O, w，τ]
-task_utils = load_data('./mydata/task_info/task'+str(task_num) + '_utils.csv')
+task_utils = load_data('./mydata/task_info/task'+str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
 task_set_ = task_utils.tolist()
+servers = [np.full((args.server_num, args.ud_num, task_num, 2), 0) for _ in range(args.server_num)]
 
-#  跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
+# 跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
 generate_snrs(args.server_num) # 生成信噪比
 generate_request(args.server_num, args.ud_num, task_num, maxp) # 生成任务请求
 
+
+
+sys.exit()
 channel_snrs = []
 for i in range(args.server_num):
     snr=load_data('./mydata/temp/dynamic_snrs_'+str(i+1)+'.csv').T
@@ -107,27 +116,17 @@ for server in range(args.server_num):
         s_uds.append(At)
     Ats.append(s_uds)
 
-# 任务缓存状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比 (server_num * ud_num)
 envs=[]
 for server in range(args.server_num):
     s_envs=[]
     for ud in range(args.ud_num):
+        # 任务缓存状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比 (server_num * ud_num)
         env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=Ats[server][ud],
                     channel_snrs=channel_snrs[server], exp_case=args.exp_case)
         # env.seed(args.seed)
         env.action_space.seed(args.seed)
         s_envs.append(env)
     envs.append(s_envs)
-
-torch.manual_seed(args.seed)
-np.random.seed(args.seed)
-
-# 系统建模
-# Center Manager(保存用户设备的任务请求)
-CM = np.full((args.server_num, args.ud_num), -1)
-
-# 服务器 (存储全局缓存信息)
-servers = [np.full((args.ud_num, task_num), [0,0]) for _ in range(args.server_num)]
 
 # 用户设备Agents (server_num * ud_num)
 agents = []
