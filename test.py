@@ -2,7 +2,7 @@ import multiprocessing
 import time
 
 def worker(index):
-    print("jinru")
+    print("进入函数")
     """worker function"""
     print(f'Worker {index} started')
     time.sleep(2)  # 模拟耗时操作
@@ -13,7 +13,7 @@ if __name__ == '__main__':
     processes = []
 
     # 创建并启动两个进程
-    for i in range(2):
+    for i in range(10):
         p = multiprocessing.Process(target=worker, args=(i,))
         p.start()
         processes.append(p)
