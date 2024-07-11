@@ -55,10 +55,11 @@ class MultiTaskCore(object):
         self.heuristic = False
         self.best_fDs = None
         self.exp_case = exp_case
-
+        
         # action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
         # sys_state: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1]
-        print("The Chosen eExperiment Configuration is: {}".format(exp_case))
+        # print("The Chosen eExperiment Configuration is: {}".format(exp_case))
+        print("所选的实验配置为: {}".format(exp_case))
         if exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
             self.reactive_only = True
             self.no_cache = True
@@ -72,13 +73,13 @@ class MultiTaskCore(object):
             self.heuristic = True
 
         # 系统动作上下限
-        self.sample_low = np.asarray([-1] * (3 * num_task + 1))
-        self.sample_high = np.asarray([1] * (3 * num_task + 1))
+        self.sample_low = np.asarray([-1] * (3 * num_task + 1), dtype=np.float32)
+        self.sample_high = np.asarray([1] * (3 * num_task + 1), dtype=np.float32)
         # 系统状态上下限
-        self.observe_low = np.asarray([0] * (2 * num_task) + [0])
-        self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1])
-        self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float16) # 系统动作空间
-        self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float16) # 系统状态空间
+        self.observe_low = np.asarray([0] * (2 * num_task) + [0], dtype=np.float32)
+        self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1], dtype=np.float32)
+        self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float32) # 系统动作空间
+        self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float32) # 系统状态空间
 
         # [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
         if self.exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
@@ -139,7 +140,6 @@ class MultiTaskCore(object):
         action, prob_action = self.sample2action(action)
 
         valid, action = self.check_action_validity(action, prob_action)
-        # print(action, self.sys_state, self.last_use, valid)
 
         # calculate the observation based on action
         observation_, observe_details, details2 = self.calc_observation(action)
