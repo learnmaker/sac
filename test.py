@@ -1,25 +1,11 @@
 import multiprocessing
 import time
+import numpy as np
 
-def worker(index):
-    print("jinru")
-    """worker function"""
-    print(f'Worker {index} started')
-    time.sleep(2)  # 模拟耗时操作
-    print(f'Worker {index} finished')
+def index2ud(index, server_num, ud_num):
+    server = index // ud_num
+    ud = index - server * ud_num
+    return server, ud
 
 if __name__ == '__main__':
-    # 创建一个进程列表
-    processes = []
-
-    # 创建并启动两个进程
-    for i in range(2):
-        p = multiprocessing.Process(target=worker, args=(i,))
-        p.start()
-        processes.append(p)
-
-    # 等待所有进程完成
-    for p in processes:
-        p.join()
-
-    print('All workers finished.')
+    print(index2ud(4,2,3))

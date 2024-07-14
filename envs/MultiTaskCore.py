@@ -59,7 +59,7 @@ class MultiTaskCore(object):
         # action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
         # sys_state: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1]
         # print("The Chosen eExperiment Configuration is: {}".format(exp_case))
-        print("所选的实验配置为: {}".format(exp_case))
+        # print("所选的实验配置为: {}".format(exp_case))
         if exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
             self.reactive_only = True
             self.no_cache = True
@@ -175,6 +175,10 @@ class MultiTaskCore(object):
         """Render the environment to the screen"""
         print(f'Step: {self.global_step}')
 
+    # 返回系统状态
+    def system_state(self):
+        return self.sys_state.copy()
+    
     # 将环境的状态值进行缩放
     def calc_observation(self, action):
         """

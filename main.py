@@ -14,116 +14,35 @@ from tool.data_loader import load_data
 from config import system_config
 from multiprocessing import Process, Pipe, Manager
 
-def train_process(env, agent, memory, args, writer):
-    print("开始训练")
-    total_numsteps = 0 # 总训练步数
-    updates = 0 # 更新参数次数
-    result_trans = []
-    result_comp = []
-    
-    for i_episode in itertools.count(1): #回合数
-        episode_reward = 0
-        episode_steps = 0
-        done = False
-        state = env.reset()
 
-        # 训练
-        while not done:
-            if args.start_steps > total_numsteps:
-                action = env.action_space.sample()  # 随机动作
-            else:
-                action = agent.select_action(state)  # 策略动作
+def collect_info(envs, server_requests, servers_cache_states, task_num, dones):
+    new_request = []
+    new_cache = []
 
-            if len(memory) > args.batch_size:
-                # Number of updates per step in environment
-                for i in range(args.updates_per_step):
-                    # Update parameters of all the networks
-                    critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
-                        memory, args.batch_size, updates)
-                    writer.add_scalar('loss/critic_1', critic_1_loss, updates)
-                    writer.add_scalar('loss/critic_2', critic_2_loss, updates)
-                    writer.add_scalar('loss/policy', policy_loss, updates)
-                    writer.add_scalar('loss/entropy_loss', ent_loss, updates)
-                    writer.add_scalar('entropy_temprature/alpha', alpha, updates)
-                    updates += 1
+    for env in envs:
+        cache = env.system_state()[:-1]
+        request = env.system_state()[-1]
 
-            next_state, reward, done, info = env.step(action)  # Step
-            episode_reward += reward
-            episode_steps += 1
-            total_numsteps += 1
-            
-            mask = 1 if episode_steps == env._max_episode_steps else float(not done)
-            memory.push(state, action, reward, next_state, mask)  # Append transition to memory
-            state = next_state
+        reordered_array = np.empty_like(cache)
+        reordered_array[::2] = cache[:task_num]
+        reordered_array[1::2] = cache[task_num:]
+        cache = reordered_array.reshape(task_num, 2)
 
-        if total_numsteps > args.num_steps:
-            break
-        
-        writer.add_scalar('reward/train', episode_reward, i_episode)
-        print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps,
-                                                                                    episode_steps,
-                                                                                    round(episode_reward, 2)))
-        
-        # 评估
-        eval_freq = 10 # 评估频率
-        if i_episode % eval_freq == 0 and args.eval is True:
-            avg_reward = 0.
-            avg_trans_cost = 0.
-            avg_compute_cost = 0.
-            episodes = 10 # 取10次的平均值，计算网络的奖励
-            done_step = 0
-            for _ in range(episodes):
-                state = env.reset()
-                episode_reward = 0
-                trans_cost = 0
-                compute_cost = 0
-                done = False
-                while not done:
-                    # print(env.sys_state)
-                    action = agent.select_action(state, evaluate=True)
-                    next_state, reward, done, info = env.step(action)
-                    episode_reward += reward
-                    try:
-                        trans_cost += info['observe_detail'][0]
-                        compute_cost += info['observe_detail'][1]
-                        done_step += 1
-                    except:
-                        pass
-                    state = next_state
+        new_cache.append(cache)
+        new_request.append(request)
+    return np.array(new_request), np.array(new_cache)
 
-                avg_reward += episode_reward
-                avg_trans_cost += trans_cost
-                avg_compute_cost += compute_cost
 
-            avg_reward /= episodes # 每次训练的奖励
-            avg_trans_cost /= done_step # 每步的传输消耗
-            avg_compute_cost /= done_step # 每步的计算消耗
-            writer.add_scalar('avg_reward/test', avg_reward, i_episode)
-            
-            print("----------------------------------------")
-            print("测试回合: {}, Total Steps: {}, Avg. Reward: {}, Avg. Trans Cost: {}, Avg. Compute Cost: {}, Glb. Step: {}".format(
-                episodes, int(done_step), round(avg_reward, 2), round(avg_trans_cost, 2), round(avg_compute_cost, 2), env.global_step))
-            print("----------------------------------------")
-            
-            result_trans.append(avg_trans_cost)
-            result_comp.append(avg_compute_cost)
-            
-            if len(result_trans) > 10:
-                print_avg_trans = np.average(np.asarray(result_trans[-10:]))
-                print_avg_comp = np.average(np.asarray(result_comp[-10:]))
-            else:
-                print_avg_trans = np.average(np.asarray(result_trans))
-                print_avg_comp = np.average(np.asarray(result_comp))
-            print("Final Avg Results for last 100 epoches: Avg. Trans Cost: {}, Avg. Compute Cost: {}".format(
-                round(print_avg_trans, 2), round(print_avg_comp, 2)))
-            print("----------------------------------------")
-            
-            writer.add_scalar('avg_cost/trans_cost', round(print_avg_trans, 2), i_episode)
-            writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
+def index2ud(index, server_num, ud_num):
+    server = index // ud_num
+    ud = index - server * ud_num
+    return server, ud
+
 
 if __name__ == '__main__':
     # 命令行参数设置
-    parser = argparse.ArgumentParser(description='PyTorch Soft Actor-Critic Args')
+    parser = argparse.ArgumentParser(
+        description='PyTorch Soft Actor-Critic Args')
     # 环境名称
     parser.add_argument('--env-name', default="MultiTaskCore",
                         help='Wireless Comm environment (default: MultiTaskCore)')
@@ -143,7 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                         help='target smoothing coefficient(τ) (default: 0.005)')
     # 学习率
-    parser.add_argument('--lr', type=float, default=0.0003, metavar='G',
+    parser.add_argument('--lr', type=float, default=1e-4, metavar='G',
                         help='learning rate (default: 0.0003)')
     # 熵前面的温度系数
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
@@ -191,48 +110,228 @@ if __name__ == '__main__':
     # 环境设置
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    total_num = args.server_num * args.ud_num
 
-    # 中央管理器(保存所有用户设备的任务请求，2 * 3 二维矩阵)
-    CM = np.full((args.server_num, args.ud_num), -1)
+    # 保存所有用户设备的任务请求，1 * total_num
+    server_requests = np.full(total_num, -1)
 
-    # 服务器 (每台服务器存储全局缓存信息，2 * 3 * 6 * 2)
+    # 存储全局缓存信息，total_num * task_num * 2
     task_num = system_config['F']  # 任务数 6
     maxp = system_config['maxp']   # 最大转移概率 70%
-    task_utils = load_data('./mydata/task_info/task'+str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
+    task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
-    servers = [np.full((args.server_num, args.ud_num, task_num, 2), 0) for _ in range(args.server_num)]
+    servers_cache_states = np.full((total_num, task_num, 2), 0)
 
     # 跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
-    generate_snrs(args.server_num) # 生成信噪比
-    generate_request(args.server_num, args.ud_num, task_num, maxp) # 生成任务请求
+    generate_snrs(args.server_num)  # 生成信噪比
+    generate_request(args.server_num, args.ud_num, task_num, maxp)  # 生成任务请求
 
     # Tensorboard保存实验数据
     writer = SummaryWriter(
         'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
-                                    args.policy, "autotune" if args.automatic_entropy_tuning else ""))
+                                      args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
-    # processes = []
+    envs = []
+    agents = []
+    memories = []
     for server in range(args.server_num):
-        print("服务器"+str(server))
         # 该服务器的信噪比
-        snr=load_data('./mydata/temp/dynamic_snrs_'+str(server+1)+'.csv').reshape(1,-1)[0]
+        snr = load_data('./mydata/temp/dynamic_snrs_' +
+                        str(server+1)+'.csv').reshape(1, -1)[0]
         for ud in range(args.ud_num):
-            print("用户设备"+str(ud))
             # 该用户设备的任务请求
-            At=load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1)+"_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1,-1)[0]
+            At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) +
+                           "_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1, -1)[0]
             # 任务缓存状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比 (server_num * ud_num)
             env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=At,
-                        channel_snrs=snr, exp_case=args.exp_case)
+                                channel_snrs=snr, exp_case=args.exp_case)
             env.action_space.seed(args.seed)
             # 该用户设备的SAC网络
             agent = SAC(env.observation_space.shape[0], env.action_space, args)
             # 该用户设备的SAC网络的经验缓存区
             memory = ReplayMemory(args.replay_size, args.seed)
-            
-            train_process(env, agent, memory, args, writer)
-            # p = Process(target=train_process, args=(env, agent, memory, args, writer))
-            # p.start()
-            # processes.append(p)
-            
-    # for p in processes:
-    #     p.join()
+
+            envs.append(env)
+            agents.append(agent)
+            memories.append(memory)
+            # train_process(env, agent, memory, args, writer)
+
+    print("环境初始化完毕，开始训练")
+
+    total_numsteps = 0  # 总训练步数
+    updates = 0  # 更新参数次数
+    result_trans = []  # 保存传输消耗评估结果
+    result_comp = []  # 保存计算消耗评估结果
+
+    for i_episode in itertools.count(1):  # 回合数
+        print("episode=",i_episode)
+        episode_reward = np.full(total_num, 0)
+        episode_steps = np.full(total_num, 0)
+        dones = np.full(total_num, False)
+        states = [env.reset() for env in envs]
+
+        # 如果还有agent没有结束
+        while np.sum(dones == False) > 0:  # 训练步数
+            # print("还有",np.sum(dones == False))
+            # 每个agent上传自己的任务请求和缓存情况
+            server_requests, servers_cache_states = collect_info(
+                envs, server_requests, servers_cache_states, task_num, dones)
+
+            # 对每个agent进行训练
+            for index, (env, agent, memory, done, state) in enumerate(zip(envs, agents, memories, dones, states)):
+                # print(index, (env, agent, memory, done, state))
+                # sys.exit()
+                # done为True，跳过
+                if done:
+                    continue
+
+                if args.start_steps > total_numsteps:
+                    action = env.action_space.sample()  # 随机动作
+                else:
+                    action = agent.select_action(state)  # 策略动作
+
+                server_index, ud_index = index2ud(index, args.server_num, args.ud_num)
+
+                if len(memory) > args.batch_size:
+                    # Number of updates per step in environment
+                    for i in range(args.updates_per_step):
+                        # Update parameters of all the networks
+                        critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
+                            memory, args.batch_size, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'loss/critic_2', critic_2_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
+                                          str(ud_index+1)+'loss/policy', policy_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'loss/entropy_loss', ent_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'entropy_temprature/alpha', alpha, updates)
+                        updates += 1
+
+                next_state, reward, done, info = env.step(action)  # Step
+                episode_reward[index] += reward
+                episode_steps[index] += 1
+                mask = 1 if episode_steps[index] == env._max_episode_steps else float(not done)
+                memory.push(state, action, reward, next_state, mask)
+                state = next_state
+                
+            print("total_numsteps",total_numsteps)
+            total_numsteps += 1
+
+        
+        if total_numsteps > args.num_steps:
+            break
+
+        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+            ud_index+1)+'reward/train', episode_reward[index], i_episode)
+        print("Episode: {}, total numsteps: {}, episode steps: {}, server{}_userDevice{}_reward: {}".format(
+            i_episode, total_numsteps, episode_steps[index], server_index + 1, ud_index + 1, round(episode_reward[index], 2)))
+        sys.exit()
+
+        for done in dones:
+
+            # 训练
+            while not done:
+
+                if args.start_steps > total_numsteps:
+                    action = env.action_space.sample()  # 随机动作
+                else:
+                    action = agent.select_action(state)  # 策略动作
+
+                if len(memory) > args.batch_size:
+                    # Number of updates per step in environment
+                    for i in range(args.updates_per_step):
+                        # Update parameters of all the networks
+                        critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
+                            memory, args.batch_size, updates)
+                        writer.add_scalar(
+                            'loss/critic_1', critic_1_loss, updates)
+                        writer.add_scalar(
+                            'loss/critic_2', critic_2_loss, updates)
+                        writer.add_scalar('loss/policy', policy_loss, updates)
+                        writer.add_scalar(
+                            'loss/entropy_loss', ent_loss, updates)
+                        writer.add_scalar(
+                            'entropy_temprature/alpha', alpha, updates)
+                        updates += 1
+
+                next_state, reward, done, info = env.step(action)  # Step
+                episode_reward += reward
+                episode_steps += 1
+                total_numsteps += 1
+
+                mask = 1 if episode_steps == env._max_episode_steps else float(
+                    not done)
+                memory.push(state, action, reward, next_state,
+                            mask)  # Append transition to memory
+                state = next_state
+
+                if total_numsteps > args.num_steps:
+                    break
+
+                writer.add_scalar('reward/train', episode_reward, i_episode)
+                print("Episode: {}, total numsteps: {}, episode steps: {}, reward: {}".format(i_episode, total_numsteps,
+                                                                                              episode_steps,
+                                                                                              round(episode_reward, 2)))
+
+            # 评估
+            eval_freq = 10  # 评估频率
+            if i_episode % eval_freq == 0 and args.eval is True:
+                avg_reward = 0.
+                avg_trans_cost = 0.
+                avg_compute_cost = 0.
+                episodes = 10  # 取10次的平均值，计算网络的奖励
+                done_step = 0
+                for _ in range(episodes):
+                    state = env.reset()
+                    episode_reward = 0
+                    trans_cost = 0
+                    compute_cost = 0
+                    done = False
+                    while not done:
+                        # print(env.sys_state)
+                        action = agent.select_action(state, evaluate=True)
+                        next_state, reward, done, info = env.step(action)
+                        episode_reward += reward
+                        try:
+                            trans_cost += info['observe_detail'][0]
+                            compute_cost += info['observe_detail'][1]
+                            done_step += 1
+                        except:
+                            pass
+                        state = next_state
+
+                    avg_reward += episode_reward
+                    avg_trans_cost += trans_cost
+                    avg_compute_cost += compute_cost
+
+                avg_reward /= episodes  # 每次训练的奖励
+                avg_trans_cost /= done_step  # 每步的传输消耗
+                avg_compute_cost /= done_step  # 每步的计算消耗
+                writer.add_scalar('avg_reward/test', avg_reward, i_episode)
+
+                print("----------------------------------------")
+                print("测试回合: {}, Total Steps: {}, Avg. Reward: {}, Avg. Trans Cost: {}, Avg. Compute Cost: {}, Glb. Step: {}".format(
+                    episodes, int(done_step), round(avg_reward, 2), round(avg_trans_cost, 2), round(avg_compute_cost, 2), env.global_step))
+                print("----------------------------------------")
+
+                result_trans.append(avg_trans_cost)
+                result_comp.append(avg_compute_cost)
+
+                if len(result_trans) > 10:
+                    print_avg_trans = np.average(
+                        np.asarray(result_trans[-10:]))
+                    print_avg_comp = np.average(np.asarray(result_comp[-10:]))
+                else:
+                    print_avg_trans = np.average(np.asarray(result_trans))
+                    print_avg_comp = np.average(np.asarray(result_comp))
+                print("Final Avg Results for last 100 epoches: Avg. Trans Cost: {}, Avg. Compute Cost: {}".format(
+                    round(print_avg_trans, 2), round(print_avg_comp, 2)))
+                print("----------------------------------------")
+
+                writer.add_scalar('avg_cost/trans_cost',
+                                  round(print_avg_trans, 2), i_episode)
+                writer.add_scalar('avg_cost/comp_cost',
+                                  round(print_avg_comp, 2), i_episode)
