@@ -45,8 +45,7 @@ def index2ud(index, ud_num):
 
 if __name__ == '__main__':
     # 命令行参数设置
-    parser = argparse.ArgumentParser(
-        description='SAC算法参数')
+    parser = argparse.ArgumentParser(description='SAC算法参数')
     # 环境名称
     parser.add_argument('--env-name', default="MultiTaskCore",
                         help='Wireless Comm environment (default: MultiTaskCore)')
@@ -90,7 +89,7 @@ if __name__ == '__main__':
     # 每次更新参数采样多少次
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                         help='model updates per simulator step (default: 1)')
-    # 多少次随机采样
+    # 使用策略网络决策动作前，多少次随机采样
     parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
                         help='Steps sampling1 random actions (default: 10000)')
     # 目标网络的更新周期
@@ -191,6 +190,7 @@ if __name__ == '__main__':
                     action = agent.select_action(state)  # 策略动作
                     
                 server_index, ud_index = index2ud(index, args.ud_num)
+                
                 if len(memory) > args.batch_size:
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
@@ -212,6 +212,7 @@ if __name__ == '__main__':
                 next_state, reward, done, info = env.step(action)  # Step
                 episode_rewards[index] += reward
                 episode_steps[index] += 1
+                
                 mask = 1 if episode_steps[index] == env._max_episode_steps else float(not done)
                 memory.push(state, action, reward, next_state, mask)
                 states[index] = next_state
