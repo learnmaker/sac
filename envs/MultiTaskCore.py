@@ -103,6 +103,9 @@ class MultiTaskCore(object):
             self.action_low = np.asarray([int(num_core * 3 / 4)] + [0] * (3 * num_task))
             self.action_high = np.asarray([int(num_core * 3 / 4)] + [0] * (3 * num_task))
 
+    def getCurrent_step(self):
+        return self.current_step
+    
     def step(self, action):
         """
         Parameters
@@ -134,20 +137,20 @@ class MultiTaskCore(object):
         self.current_step += 1
         self.global_step += 1
         done = False
-        self.last_use[int(self.sys_state[-1])] = (self.current_step - 1)
-        self.popularity[int(self.sys_state[-1])] += 1
+        self.last_use[int(self.sys_state[-1])] = (self.current_step - 1) # 记录资源的最后一次使用时间
+        self.popularity[int(self.sys_state[-1])] += 1 #记录资源的使用频率
 
         action, prob_action = self.sample2action(action)
 
         valid, action = self.check_action_validity(action, prob_action)
 
-        # calculate the observation based on action
+        # 基于动作计算观测值
         observation_, observe_details, details2 = self.calc_observation(action)
         if self.current_step > MAX_STEPS:
             done = True
 
         obs = self.next_state(action, valid)
-        self.sys_state = obs    # update the system state for the nex
+        self.sys_state = obs    # 更新nex的系统状态
         self.sys_state[-1] = self.requests[self.global_step % len(self.requests)]
 
         # reward_ = - observation_ ** 2 / 1e12
@@ -164,8 +167,8 @@ class MultiTaskCore(object):
         self.global_step -= 1
         self.sum_Comp = 0
         self.sum_Trans = 0
-        self.popularity = [0] * num_task    # for heuristic solution
-        self.last_use = [0] * num_task   # for heuristic solution
+        self.popularity = [0] * num_task    # 用于启发式解决方案
+        self.last_use = [0] * num_task   # 用于启发式解决方案
         self.sys_state = self.init_sys_state.copy()
         self.sys_state[-1] = self.requests[self.global_step % len(self.requests)]
 
@@ -231,6 +234,7 @@ class MultiTaskCore(object):
 
         return sample
 
+    # 归一化
     def scale_state(self, state):
         # Scale to [-1, 1]
         length = self.observe_high - self.observe_low
