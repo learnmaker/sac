@@ -177,9 +177,10 @@ if __name__ == '__main__':
             # 每个agent上传自己的任务请求和缓存情况
             server_requests, servers_cache_states = collect_info(envs, task_num, dones)
             
+            
             # 对每个agent进行训练
             for index, (env, agent, memory, done, state) in enumerate(zip(envs, agents, memories, dones, states)):
-            
+
                 # done为True，跳过
                 if done:
                     continue
@@ -187,7 +188,8 @@ if __name__ == '__main__':
                 if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
-                    action = agent.select_action(state)  # 策略动作
+                    action = agent.select_action(state, server_requests, servers_cache_states)  # 策略动作，传入请求和缓存
+                    
                     
                 server_index, ud_index = index2ud(index, args.ud_num)
                 

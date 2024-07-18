@@ -8,11 +8,11 @@ LOG_SIG_MIN = -20
 epsilon = 1e-6
 
 
-# Initialize Policy weights
+# 遍历网络中的所有nn.Linear模块，并对它们的权重和偏置进行初始化
 def weights_init_(m):
     if isinstance(m, nn.Linear):
-        torch.nn.init.xavier_uniform_(m.weight, gain=1)
-        torch.nn.init.constant_(m.bias, 0)
+        torch.nn.init.xavier_uniform_(m.weight, gain=1) # 使用Xavier均匀分布初始化权重矩阵
+        torch.nn.init.constant_(m.bias, 0) # 所有的偏置项都被初始化为0
 
 
 class ValueNetwork(nn.Module):
@@ -23,7 +23,7 @@ class ValueNetwork(nn.Module):
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
         self.linear3 = nn.Linear(hidden_dim, 1)
 
-        self.apply(weights_init_)
+        self.apply(weights_init_) # 在网络的所有子模块上调用weights_init_函数
 
     def forward(self, state):
         x = F.relu(self.linear1(state))

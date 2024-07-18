@@ -72,10 +72,10 @@ class MultiTaskCore(object):
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
 
-        # 系统动作上下限
+        # 系统动作上下限 F + 1 +2F
         self.sample_low = np.asarray([-1] * (3 * num_task + 1), dtype=np.float32)
         self.sample_high = np.asarray([1] * (3 * num_task + 1), dtype=np.float32)
-        # 系统状态上下限
+        # 系统状态上下限 1 + 2F
         self.observe_low = np.asarray([0] * (2 * num_task) + [0], dtype=np.float32)
         self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1], dtype=np.float32)
         self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float32) # 系统动作空间

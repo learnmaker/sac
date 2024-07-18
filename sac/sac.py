@@ -9,23 +9,23 @@ from sac.model import GaussianPolicy, QNetwork, DeterministicPolicy
 class SAC(object):
     def __init__(self, num_inputs, action_space, args):
 
-        self.gamma = args.gamma
-        self.tau = args.tau
-        self.alpha = args.alpha
+        self.gamma = args.gamma # 折扣因子
+        self.tau = args.tau # 目标网络软更新的混合系数
+        self.alpha = args.alpha # 控制策略熵的权重，用于平衡探索和利用
 
-        self.policy_type = args.policy
-        self.target_update_interval = args.target_update_interval
-        self.automatic_entropy_tuning = args.automatic_entropy_tuning
+        self.policy_type = args.policy # 策略类型
+        self.target_update_interval = args.target_update_interval # 更新目标网络频率
+        self.automatic_entropy_tuning = args.automatic_entropy_tuning # 是否自动调整熵的权重
 
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
         # 价值网络
-        self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device)
-        self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
+        self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device) # 主Q网络，用于评估状态-动作对的价值
+        self.critic_optim = Adam(self.critic.parameters(), lr=args.lr) # Q网络的优化器，使用Adam优化算法
         
         # 目标价值网络
-        self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-        hard_update(self.critic_target, self.critic)
+        self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device) # 目标Q网络，用于稳定学习过程，减少训练波动
+        hard_update(self.critic_target, self.critic) # 初始时，目标网络的权重被硬拷贝（完全复制）自主网络的权重
 
         if self.policy_type == "Gaussian":
             # Target Entropy = −dim(A) (e.g. , -6 for HalfCheetah-v2) as given in the paper
@@ -33,7 +33,7 @@ class SAC(object):
                 self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item()
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
-            # 策略网络
+            # 策略网络（actor）
             self.policy = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
@@ -44,8 +44,11 @@ class SAC(object):
             self.policy = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
-    def select_action(self, state, evaluate=False):
-        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
+    def select_action(self, state, server_requests, servers_cache_states, evaluate=False):
+        tensor_state = torch.FloatTensor(state)
+        tensor_request = torch.FloatTensor(server_requests)
+        tensor_cach = torch.FloatTensor(servers_cache_states)
+        state = torch.cat((tensor_state, tensor_request, tensor_cach.view(-1)), dim=0).to(self.device).unsqueeze(0)
         if evaluate is False:
             action, _, _ = self.policy.sample(state)
         else:
