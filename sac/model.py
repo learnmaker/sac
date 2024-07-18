@@ -68,9 +68,9 @@ class GaussianPolicy(nn.Module):
         
         self.linear1 = nn.Linear(num_inputs, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-
-        self.mean_linear = nn.Linear(hidden_dim, num_actions)
-        self.log_std_linear = nn.Linear(hidden_dim, num_actions)
+ 
+        self.mean_linear = nn.Linear(hidden_dim, num_actions) # 计算动作均值的线性层
+        self.log_std_linear = nn.Linear(hidden_dim, num_actions) # 计算动作标准差对数的线性层
 
         self.apply(weights_init_)
 
@@ -97,7 +97,7 @@ class GaussianPolicy(nn.Module):
         std = log_std.exp()
         normal = Normal(mean, std)
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
-        y_t = torch.tanh(x_t)
+        y_t = torch.tanh(x_t) # 将其范围约束在[-1, 1]之间
         action = y_t * self.action_scale + self.action_bias
         log_prob = normal.log_prob(x_t)
         # Enforcing Action Bound
