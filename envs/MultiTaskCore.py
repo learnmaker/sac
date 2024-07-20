@@ -33,6 +33,7 @@ class MultiTaskCore(object):
     def __init__(
             self,
             init_sys_state,  # 初始系统状态, S^I, S^O for each task, plus A(0) in range [0, n_task-1]
+            agent_num,
             task_set,  # 任务集信息, for each sublist it is [I, O, w]
             requests,  # the request task samples
             channel_snrs,   # a list of snr value of the channel
@@ -40,6 +41,7 @@ class MultiTaskCore(object):
     ):
         super(MultiTaskCore, self).__init__()
         self.task_set = task_set
+        self.agent_num = agent_num
         self.channel_snrs = channel_snrs
         self.current_step = 0
         self.global_step = 0  # for select the request sample
@@ -50,6 +52,7 @@ class MultiTaskCore(object):
         self._max_episode_steps = MAX_STEPS
         self.popularity = [0] * num_task    # for heuristic solution
         self.last_use = [0] * num_task    # for heuristic solution
+        
         self.reactive_only = False
         self.no_cache = False
         self.heuristic = False
@@ -72,12 +75,13 @@ class MultiTaskCore(object):
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
 
-        # 系统动作上下限 F + 1 +2F
-        self.sample_low = np.asarray([-1] * (3 * num_task + 1), dtype=np.float32)
-        self.sample_high = np.asarray([1] * (3 * num_task + 1), dtype=np.float32)
-        # 系统状态上下限 1 + 2F
+        # 系统动作上下限 A + A*F + A*F*2 + A + A*4 计算核数、输入数据是否推送、缓存更新、卸载对象、卸载方式
+        self.sample_low = np.asarray([0]*agent_num + [0]*agent_num*num_task + [-1]*agent_num*num_task*2 + [-1]*agent_num + [0]*agent_num, dtype=np.float32)
+        self.sample_high = np.asarray([0]*agent_num + [0]*agent_num*num_task + [-1]*agent_num*num_task*2 + [-1]*agent_num + [0]*agent_num, dtype=np.float32)
+        # 系统状态上下限 1 + 2F 请求、缓存状态
         self.observe_low = np.asarray([0] * (2 * num_task) + [0], dtype=np.float32)
         self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1], dtype=np.float32)
+        
         self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float32) # 系统动作空间
         self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float32) # 系统状态空间
 

@@ -107,23 +107,22 @@ if __name__ == '__main__':
     # 每个服务器的用户设备个数
     parser.add_argument('--ud_num', type=int, default=2,
                         help='user device number(default: 3)')
-
     args = parser.parse_args()
 
     # 环境设置
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    total_num = args.server_num * args.ud_num
+    agent_num = args.server_num * args.ud_num
 
-    # 保存所有用户设备的任务请求，1 * total_num，初始化为-1
-    server_requests = np.full(total_num, -1)
+    # 保存所有用户设备的任务请求，1 * agent_num，初始化为-1
+    server_requests = np.full(agent_num, -1)
 
-    # 存储全局缓存信息，total_num * task_num * 2，初始化为0
+    # 存储全局缓存信息，agent_num * task_num * 2，初始化为0
     task_num = system_config['F']  # 任务数 6
     maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
-    servers_cache_states = np.full((total_num, task_num, 2), 0)
+    servers_cache_states = np.full((agent_num, task_num, 2), 0)
 
     # 跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
     generate_snrs(args.server_num)  # 生成信噪比
@@ -145,8 +144,8 @@ if __name__ == '__main__':
             # 该用户设备的任务请求
             At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) +
                            "_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1, -1)[0]
-            # 任务缓存状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型
-            env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], task_set=task_set_, requests=At,
+            # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型
+            env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], agent_num=agent_num, task_set=task_set_, requests=At,
                                 channel_snrs=snr, exp_case=args.exp_case)
             env.action_space.seed(args.seed)
             # 该用户设备的SAC网络
@@ -160,15 +159,15 @@ if __name__ == '__main__':
 
     print("环境初始化完毕，开始训练")
 
-    total_numsteps = 0  # 总训练步数
+    agent_numsteps = 0  # 总训练步数
     updates = 0  # 总更新参数次数
     result_trans = []  # 保存传输消耗评估结果
     result_comp = []  # 保存计算消耗评估结果
 
     for i_episode in itertools.count(1):  # 回合数
-        episode_rewards = np.full(total_num, 0) # 本回合各agent奖励
-        episode_steps = np.full(total_num, 0) # 本回合各agent交互步数
-        dones = np.full(total_num, False) # 本回合各agent是否结束
+        episode_rewards = np.full(agent_num, 0) # 本回合各agent奖励
+        episode_steps = np.full(agent_num, 0) # 本回合各agent交互步数
+        dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = [env.reset() for env in envs]
 
         # 如果还有agent没有结束
@@ -185,7 +184,7 @@ if __name__ == '__main__':
                 if done:
                     continue
 
-                if args.start_steps > total_numsteps:
+                if args.start_steps > agent_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
                     action = agent.select_action(state, server_requests, servers_cache_states)  # 策略动作，传入请求和缓存
@@ -220,14 +219,14 @@ if __name__ == '__main__':
                 states[index] = next_state
                 dones[index] = done
                 
-            total_numsteps += 1
+            agent_numsteps += 1
 
              
-        if total_numsteps > args.num_steps:
+        if agent_numsteps > args.num_steps:
             break
 
-        print("Episode: {}, total numsteps: {}, episode steps: {}".format(i_episode, total_numsteps, episode_steps[index]))
-        for index in range(total_num):
+        print("Episode: {}, total numsteps: {}, episode steps: {}".format(i_episode, agent_numsteps, episode_steps[index]))
+        for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
             writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                 ud_index+1)+'reward/train', episode_rewards[index], i_episode)
@@ -238,19 +237,19 @@ if __name__ == '__main__':
         eval_freq = 10  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
             
-            avg_rewards = np.full(total_num, 0)
-            avg_trans_costs = np.full(total_num, 0)
-            avg_compute_costs = np.full(total_num, 0)
+            avg_rewards = np.full(agent_num, 0)
+            avg_trans_costs = np.full(agent_num, 0)
+            avg_compute_costs = np.full(agent_num, 0)
             episodes = 10  # 取10次的平均值，计算网络的奖励
-            done_steps = np.full(total_num, 0)
+            done_steps = np.full(agent_num, 0)
             
             for _ in range(episodes):
                 
                 states = [env.reset() for env in envs]
-                episode_rewards = np.full(total_num, 0)
-                trans_costs = np.full(total_num, 0)
-                compute_costs = np.full(total_num, 0)
-                dones = np.full(total_num, False)
+                episode_rewards = np.full(agent_num, 0)
+                trans_costs = np.full(agent_num, 0)
+                compute_costs = np.full(agent_num, 0)
+                dones = np.full(agent_num, False)
                 
                 while np.sum(dones == False) > 0:
                     for index, (env, agent, memory, done, state) in enumerate(zip(envs, agents, memories, dones, states)):
@@ -271,14 +270,14 @@ if __name__ == '__main__':
                         states[index] = next_state
                         dones[index] = done
 
-                for index in range(total_num):
+                for index in range(agent_num):
                     server_index, ud_index = index2ud(index, args.ud_num)
                     avg_rewards[index] += episode_rewards[index]
                     avg_trans_costs[index] += trans_costs[index]
                     avg_compute_costs[index] += compute_costs[index]
 
             print("----------------------------------------")
-            for index in range(total_num):
+            for index in range(agent_num):
                 server_index, ud_index = index2ud(index, args.ud_num)
                 avg_rewards[index] /= episodes  # 每次训练的奖励
                 avg_trans_costs[index] /= done_steps[index]  # 每步的传输消耗
