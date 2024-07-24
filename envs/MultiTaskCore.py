@@ -34,7 +34,7 @@ class MultiTaskCore(object):
             self,
             init_sys_state,  # 初始系统状态, S^I, S^O for each task, plus A(0) in range [0, n_task-1]
             agent_num,
-            task_set,  # 任务集信息, for each sublist it is [I, O, w]
+            task_set,  # 任务集信息, for each sublist it is [I, O, w, τ]
             requests,  # the request task samples
             channel_snrs,   # a list of snr value of the channel
             exp_case='case3',  # the experiment configuration, default the solution with proactive transmission
@@ -47,7 +47,7 @@ class MultiTaskCore(object):
         self.global_step = 0  # for select the request sample
         self.requests = requests
         self.sys_state = init_sys_state
-        self.sys_state[-1] = self.requests[self.global_step % len(self.requests)]
+        self.sys_state[-1] = self.requests[self.global_step % len(self.requests)] # 循环
         self.init_sys_state = init_sys_state
         self._max_episode_steps = MAX_STEPS
         self.popularity = [0] * num_task    # for heuristic solution
@@ -63,6 +63,7 @@ class MultiTaskCore(object):
         # sys_state: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1]
         # print("The Chosen eExperiment Configuration is: {}".format(exp_case))
         # print("所选的实验配置为: {}".format(exp_case))
+        
         if exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
             self.reactive_only = True
             self.no_cache = True
@@ -75,37 +76,47 @@ class MultiTaskCore(object):
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
 
-        # 系统动作上下限 A + A*F + A*F*2 + A + A*4 计算核数、输入数据是否推送、缓存更新、卸载对象、卸载方式
-        self.sample_low = np.asarray([0]*agent_num + [0]*agent_num*num_task + [-1]*agent_num*num_task*2 + [-1]*agent_num + [0]*agent_num, dtype=np.float32)
-        self.sample_high = np.asarray([0]*agent_num + [0]*agent_num*num_task + [-1]*agent_num*num_task*2 + [-1]*agent_num + [0]*agent_num, dtype=np.float32)
-        # 系统状态上下限 1 + 2F 请求、缓存状态
-        self.observe_low = np.asarray([0] * (2 * num_task) + [0], dtype=np.float32)
-        self.observe_high = np.asarray([1] * (2 * num_task) + [num_task - 1], dtype=np.float32)
+        # 系统动作上下限 1 + F + F*2 + 1 + 4 计算核数、输入数据是否推送、缓存更新、卸载对象、卸载方式
+        self.sample_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1] + [0], dtype=np.float32)
+        self.sample_high = np.asarray([1] + [1]*num_task + [1]*num_task*2 + [agent_num] + [4], dtype=np.float32)
+        # 系统状态上下限 A + A*F*2 请求、缓存状态
+        self.observe_low = np.asarray([0] + [0]*num_task*2, dtype=np.float32)
+        self.observe_high = np.asarray([num_task]+ [1]*num_task*2, dtype=np.float32)
         
         self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float32) # 系统动作空间
         self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float32) # 系统状态空间
 
         # [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
+        
         if self.exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
-            self.action_low = np.asarray([0] * (3 * num_task + 1))
-            self.action_high = np.asarray([num_core] + [0] * (3 * num_task))
+            self.action_low = np.asarray([0] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([num_core] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            
         elif self.exp_case == 'case2':  # case 2: no cache, reactive only, dynamic fD
-            self.action_low = np.asarray([0] * (3 * num_task + 1))
-            self.action_high = np.asarray([num_core] + [0] * (3 * num_task))
-        elif self.exp_case == 'case3':  # case 3: proactive transmit, dynamic fD
-            self.action_low = np.asarray([0] * (num_task + 1) + [-1] * (2 * num_task))
-            self.action_high = np.asarray([num_core] + [1] * (3 * num_task))
+            self.action_low = np.asarray([0] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([num_core] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            
+        elif self.exp_case == 'case3':  # case 3: with cache, proactive transmit, dynamic fD
+            self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([num_core] + [1]*num_task + [1]*num_task*2 + [-1] + [0])
+            
         elif self.exp_case == 'case4':  # case 4: with cache, reactive only, dynamic fD
-            self.action_low = np.asarray([0] * (num_task + 1) + [-1] * (2 * num_task))
-            self.action_high = np.asarray([num_core] + [0] * num_task + [1] * (2 * num_task))
+            self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([num_core] + [0]*num_task + [1]*num_task*2 + [-1] + [0])
+            
+        elif self.exp_case == 'case5':  # case 5: with cache, proactive transmit, dynamic fD, offload
+            self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [0] + [0])
+            self.action_high = np.asarray([num_core] + [1]*num_task + [1]*num_task*2 + [agent_num] + [4])
+            
         elif self.exp_case == 'case6':  # case 6: with cache, most recently used cache, least recently used replace,
             # fixed computing cores
-            self.action_low = np.asarray([int(num_core * 3 / 4)] + [0] * (3 * num_task))
-            self.action_high = np.asarray([int(num_core * 3 / 4)] + [0] * (3 * num_task))
+            self.action_low = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            
         elif self.exp_case == 'case7':  # case 7: with cache, most frequently used cache, least frequently used replace,
             # fixed computing cores
-            self.action_low = np.asarray([int(num_core * 3 / 4)] + [0] * (3 * num_task))
-            self.action_high = np.asarray([int(num_core * 3 / 4)] + [0] * (3 * num_task))
+            self.action_low = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
 
     def getCurrent_step(self):
         return self.current_step
@@ -349,7 +360,7 @@ class MultiTaskCore(object):
             if S_I_f[most_interest_A] == 0:
                 dS_I_f_new[most_interest_A] = 1
                 if most_interest_A != A_t:
-                    b_f_new[most_interest_A] = 1  # proactive transmission
+                    b_f_new[most_interest_A] = 1  # 主动传输
                 is_cache_exceed = self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, dS_I_f_new, dS_O_f_new)
                 # remove the cache for least frequently used task if it has cache
                 if is_cache_exceed and least_interest_A is not None:
@@ -363,7 +374,7 @@ class MultiTaskCore(object):
             return not is_cache_exceed, action
 
         # below are for non-heuristic, SAC solution
-        bf_sort_idx = np.argsort(b_f_prob)[::-1]
+        bf_sort_idx = np.argsort(b_f_prob)[::-1] # 从概率大的向概率小的排序
 
         if b_f[bf_sort_idx[0]] > 0 and S_I_f[bf_sort_idx[0]] + S_O_f[bf_sort_idx[0]] < 1:
             b_f_new[bf_sort_idx[0]] = 1

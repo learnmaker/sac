@@ -117,7 +117,7 @@ if __name__ == '__main__':
     # 保存所有用户设备的任务请求，1 * agent_num，初始化为-1
     server_requests = np.full(agent_num, -1)
 
-    # 存储全局缓存信息，agent_num * task_num * 2，初始化为0
+    # 保存所有用户设备的缓存状态，agent_num * task_num * 2，初始化为0
     task_num = system_config['F']  # 任务数 6
     maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     servers_cache_states = np.full((agent_num, task_num, 2), 0)
 
     # 跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
-    generate_snrs(args.server_num)  # 生成信噪比
+    generate_snrs(args.server_num)  # 生成信噪比，每个服务器下的信噪比相同
     generate_request(args.server_num, args.ud_num, task_num, maxp)  # 生成任务请求
 
     # Tensorboard保存实验数据
@@ -145,6 +145,7 @@ if __name__ == '__main__':
             At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) +
                            "_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1, -1)[0]
             # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型
+            # 单个用户设备
             env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], agent_num=agent_num, task_set=task_set_, requests=At,
                                 channel_snrs=snr, exp_case=args.exp_case)
             env.action_space.seed(args.seed)
