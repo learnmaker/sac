@@ -76,12 +76,12 @@ class MultiTaskCore(object):
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
 
-        # 系统动作上下限 1 + F + F*2 + 1 + 4 计算核数、输入数据是否推送、缓存更新、卸载对象、卸载方式
-        self.sample_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1] + [0], dtype=np.float32)
-        self.sample_high = np.asarray([1] + [1]*num_task + [1]*num_task*2 + [agent_num] + [4], dtype=np.float32)
+        # 系统动作上下限 F + F*2 + 1 + 1 + 4 输入数据是否推送、缓存更新、计算核数、卸载对象、卸载方式
+        self.sample_low = np.asarray([0]*num_task + [-1]*num_task*2 + [0] + [-1] + [0], dtype=np.float32)
+        self.sample_high = np.asarray([1]*num_task + [1]*num_task*2 + [1] + [agent_num-1] + [3], dtype=np.float32)
         # 系统状态上下限 A + A*F*2 请求、缓存状态
-        self.observe_low = np.asarray([0] + [0]*num_task*2, dtype=np.float32)
-        self.observe_high = np.asarray([num_task]+ [1]*num_task*2, dtype=np.float32)
+        self.observe_low = np.asarray([0]*num_task*2 + [0], dtype=np.float32)
+        self.observe_high = np.asarray([1]*num_task*2 + [num_task-1], dtype=np.float32)
         
         self.action_space = spaces.Box(low=self.sample_low, high=self.sample_high, dtype=np.float32) # 系统动作空间
         self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float32) # 系统状态空间
@@ -105,8 +105,8 @@ class MultiTaskCore(object):
             self.action_high = np.asarray([num_core] + [0]*num_task + [1]*num_task*2 + [-1] + [0])
             
         elif self.exp_case == 'case5':  # case 5: with cache, proactive transmit, dynamic fD, offload
-            self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [0] + [0])
-            self.action_high = np.asarray([num_core] + [1]*num_task + [1]*num_task*2 + [agent_num] + [4])
+            self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1] + [0])
+            self.action_high = np.asarray([num_core] + [1]*num_task + [1]*num_task*2 + [agent_num-1] + [3])
             
         elif self.exp_case == 'case6':  # case 6: with cache, most recently used cache, least recently used replace,
             # fixed computing cores
@@ -165,7 +165,7 @@ class MultiTaskCore(object):
             done = True
 
         obs = self.next_state(action, valid)
-        self.sys_state = obs    # 更新nex的系统状态
+        self.sys_state = obs    # 更新系统状态
         self.sys_state[-1] = self.requests[self.global_step % len(self.requests)]
 
         # reward_ = - observation_ ** 2 / 1e12
@@ -197,11 +197,11 @@ class MultiTaskCore(object):
     def system_state(self):
         return self.sys_state.copy()
     
-    # 将环境的状态值进行缩放
+    # 计算传输消耗和计算消耗
     def calc_observation(self, action):
         """
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
-        # object: calculate B_R + B_P + E_R + E_T
+        # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
         """
         A_t = int(self.sys_state[-1])
         snr_t = self.channel_snrs[self.global_step % len(self.channel_snrs)]
@@ -282,7 +282,6 @@ class MultiTaskCore(object):
 
         return np.array(next_state)
 
-    # 
     def check_action_validity(self, action, prob_action):
         """
         Input:
@@ -299,6 +298,7 @@ class MultiTaskCore(object):
             8) -S_O(f) <= dS_O(f) <= min{C_R(f)+C_P(f), 1-S_O(f)}
             9) sum of I(f) * (S_I(f) + dS_I(f)) + O(f) * (S_O(f) +dS_O(f)) <= C
         """
+        # 数据准备
         A_t = int(self.sys_state[-1])
         S_O_At = self.sys_state[num_task + A_t]
         I_At = self.task_set[A_t][0]

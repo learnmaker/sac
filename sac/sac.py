@@ -30,7 +30,7 @@ class SAC(object):
         if self.policy_type == "Gaussian":
             # Target Entropy = −dim(A) (e.g. , -6 for HalfCheetah-v2) as given in the paper
             if self.automatic_entropy_tuning is True:
-                self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item()
+                self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item() # 所有元素的乘积
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
             # 策略网络（actor）
@@ -48,7 +48,7 @@ class SAC(object):
         tensor_state = torch.FloatTensor(state)
         tensor_request = torch.FloatTensor(server_requests)
         tensor_cach = torch.FloatTensor(servers_cache_states)
-        state = torch.cat((tensor_state, tensor_request, tensor_cach.view(-1)), dim=0).to(self.device).unsqueeze(0)
+        state = torch.cat((tensor_state, tensor_request, tensor_cach.view(-1)), dim=0).to(self.device).unsqueeze(0) # 拼接矩阵
         if evaluate is False:
             action, _, _ = self.policy.sample(state)
         else:

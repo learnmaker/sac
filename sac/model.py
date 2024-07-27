@@ -89,13 +89,13 @@ class GaussianPolicy(nn.Module):
         x = F.relu(self.linear2(x))
         mean = self.mean_linear(x)
         log_std = self.log_std_linear(x)
-        log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX)
+        log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX) # 限制在规定范围内
         return mean, log_std
 
     def sample(self, state):
         mean, log_std = self.forward(state)
         std = log_std.exp()
-        normal = Normal(mean, std)
+        normal = Normal(mean, std) # 正态分布
         x_t = normal.rsample()  # for reparameterization trick (mean + std * N(0,1))
         y_t = torch.tanh(x_t) # 将其范围约束在[-1, 1]之间
         action = y_t * self.action_scale + self.action_bias

@@ -149,6 +149,7 @@ if __name__ == '__main__':
             env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], agent_num=agent_num, task_set=task_set_, requests=At,
                                 channel_snrs=snr, exp_case=args.exp_case)
             env.action_space.seed(args.seed)
+
             # 该用户设备的SAC网络
             agent = SAC(env.observation_space.shape[0], env.action_space, args)
             # 该用户设备的SAC网络的经验缓存区
