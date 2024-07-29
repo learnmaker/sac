@@ -19,11 +19,11 @@ class SAC(object):
 
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
-        # 价值网络
+        # 价值网络 state + action--> score
         self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device) # 主Q网络，用于评估状态-动作对的价值
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr) # Q网络的优化器，使用Adam优化算法
         
-        # 目标价值网络
+        # 目标价值网络(更新较慢)
         self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device) # 目标Q网络，用于稳定学习过程，减少训练波动
         hard_update(self.critic_target, self.critic) # 初始时，目标网络的权重被硬拷贝（完全复制）自主网络的权重
 
@@ -33,7 +33,7 @@ class SAC(object):
                 self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item() # 所有元素的乘积
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
-            # 策略网络（actor）
+            # 策略网络（actor）state-->action
             self.policy = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
             self.policy_optim = Adam(self.policy.parameters(), lr=args.lr)
 
@@ -56,7 +56,7 @@ class SAC(object):
         return action.detach().cpu().numpy()[0]
 
     def update_parameters(self, memory, batch_size, updates):
-        # Sample a batch from memory
+        # 状态、动作、奖励、下一状态、是否结束
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
@@ -107,7 +107,7 @@ class SAC(object):
         if updates % self.target_update_interval == 0:
             soft_update(self.critic_target, self.critic, self.tau)
 
-        # Q-networks的损失、策略损失、温度参数α的损失和温度参数α的值
+        # critic损失、actor损失、温度参数α的损失和温度参数α的值
         return qf1_loss.item(), qf2_loss.item(), policy_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     # Save model parameters

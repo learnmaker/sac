@@ -50,7 +50,7 @@ if __name__ == '__main__':
     parser.add_argument('--env-name', default="MultiTaskCore",
                         help='Wireless Comm environment (default: MultiTaskCore)')
     # 实验配置
-    parser.add_argument('--exp-case', default="case3",
+    parser.add_argument('--exp-case', default="case5",
                         help='The experiment configuration case (default: case 3)')
     # 策略类型
     parser.add_argument('--policy', default="Gaussian",
@@ -130,7 +130,7 @@ if __name__ == '__main__':
 
     # Tensorboard保存实验数据
     writer = SummaryWriter(
-        'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.env_name,
+        'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
                                       args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
     envs = []
@@ -177,7 +177,6 @@ if __name__ == '__main__':
             
             # 每个agent上传自己的任务请求和缓存情况
             server_requests, servers_cache_states = collect_info(envs, task_num, dones)
-            
             
             # 对每个agent进行训练
             for index, (env, agent, memory, done, state) in enumerate(zip(envs, agents, memories, dones, states)):
@@ -227,7 +226,7 @@ if __name__ == '__main__':
         if agent_numsteps > args.num_steps:
             break
 
-        print("Episode: {}, total numsteps: {}, episode steps: {}".format(i_episode, agent_numsteps, episode_steps[index]))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, agent_numsteps, episode_steps[index]))
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
             writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
@@ -281,7 +280,7 @@ if __name__ == '__main__':
             print("----------------------------------------")
             for index in range(agent_num):
                 server_index, ud_index = index2ud(index, args.ud_num)
-                avg_rewards[index] /= episodes  # 每次训练的奖励
+                avg_rewards[index] /= episodes  # 每回合的奖励
                 avg_trans_costs[index] /= done_steps[index]  # 每步的传输消耗
                 avg_compute_costs[index] /= done_steps[index]  # 每步的计算消耗
                 writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_avgReward/test', avg_rewards[index], i_episode)

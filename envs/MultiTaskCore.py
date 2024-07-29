@@ -57,6 +57,7 @@ class MultiTaskCore(object):
         self.no_cache = False
         self.heuristic = False
         self.best_fDs = None
+        self.offload = False
         self.exp_case = exp_case
         
         # action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
@@ -73,13 +74,18 @@ class MultiTaskCore(object):
             self.no_cache = True
         elif exp_case == 'case4':  # case 4: with cache, reactive only, dynamic fD
             self.reactive_only = True
+        elif exp_case == 'case5':  # case 4: with cache, dynamic fD, offload
+            self.offload = True
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
 
-        # 系统动作上下限 F + F*2 + 1 + 1 + 4 输入数据是否推送、缓存更新、计算核数、卸载对象、卸载方式
-        self.sample_low = np.asarray([0]*num_task + [-1]*num_task*2 + [0] + [-1] + [0], dtype=np.float32)
-        self.sample_high = np.asarray([1]*num_task + [1]*num_task*2 + [1] + [agent_num-1] + [3], dtype=np.float32)
-        # 系统状态上下限 A + A*F*2 请求、缓存状态
+        # 系统动作上下限 1 + F + F*2 + 1 + 4 计算核数、输入数据是否主动推送、缓存更新、卸载对象、卸载方式
+        # self.sample_low = np.asarray([0] +[0]*num_task + [-1]*num_task*2 + [-1] + [0], dtype=np.float32)
+        # self.sample_high = np.asarray([1] + [1]*num_task + [1]*num_task*2 + [1] + [1], dtype=np.float32)
+        self.sample_low = np.asarray([-1] * (3 * num_task + 3), dtype=np.float32)
+        self.sample_high = np.asarray([1] * (3 * num_task + 3), dtype=np.float32)
+        
+        # 系统状态上下限 F*2 + 1 缓存状态、请求
         self.observe_low = np.asarray([0]*num_task*2 + [0], dtype=np.float32)
         self.observe_high = np.asarray([1]*num_task*2 + [num_task-1], dtype=np.float32)
         
@@ -87,7 +93,6 @@ class MultiTaskCore(object):
         self.observation_space = spaces.Box(low=self.observe_low, high=self.observe_high, dtype=np.float32) # 系统状态空间
 
         # [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
-        
         if self.exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
             self.action_low = np.asarray([0] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
             self.action_high = np.asarray([num_core] + [0]*num_task + [0]*num_task*2 + [-1] + [0])
@@ -159,7 +164,7 @@ class MultiTaskCore(object):
 
         valid, action = self.check_action_validity(action, prob_action)
 
-        # 基于动作计算观测值
+        # 计算传输消耗和计算消耗
         observation_, observe_details, details2 = self.calc_observation(action)
         if self.current_step > MAX_STEPS:
             done = True
@@ -200,21 +205,27 @@ class MultiTaskCore(object):
     # 计算传输消耗和计算消耗
     def calc_observation(self, action):
         """
-        # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)]
+        # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks), O_u, O_m]
         # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
         """
         A_t = int(self.sys_state[-1])
         snr_t = self.channel_snrs[self.global_step % len(self.channel_snrs)]
-        I_At = self.task_set[A_t][0]
-        w_At = self.task_set[A_t][2]
+        I_At = self.task_set[A_t][0] # 输入数据大小
+        w_At = self.task_set[A_t][2] # 每比特所需计算周期
+        # 对应任务缓存状态
         S_I_At = self.sys_state[A_t]
         S_O_At = self.sys_state[num_task + A_t]
+        # 计算核数
         C_R_At = action[0]
+        # 卸载对象、卸载方式
+        O_u, O_m = action[-2], action[-1]
         # print(action)
+        
         if S_I_At == 1 or S_O_At == 1:
             B_R = 0
         else:
             B_R = (1 - S_I_At) * (1 - S_O_At) * I_At / ((tau - I_At * w_At / (C_R_At * fD)) * math.log2(1 + snr_t))
+            
         E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
 
         if self.reactive_only:

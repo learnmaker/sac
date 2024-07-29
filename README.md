@@ -71,11 +71,13 @@ Use the specific value for `--exp-case` argument
 
 | Algorithms | `--exp-case` |
 | ---------- | ------------ |
+| DFNC       | case2        |
 | PTDFC      | case3        |
 | DFC        | case4        |
-| DFNC       | case2        |
-| MFU-LFU    | case7        |
+| PTDFC-O    | case5        |
 | MRU-LRU    | case6        |
+| MFU-LFU    | case7        |
+
 
 #### For Visualizing Convergence Via Tensorboard
 
