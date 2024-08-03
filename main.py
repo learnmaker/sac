@@ -10,32 +10,10 @@ from tool.samples_from_transmat import generate_request
 from torch.utils.tensorboard import SummaryWriter
 from sac.replay_memory import ReplayMemory
 from envs.MultiTaskCore import MultiTaskCore
+from envs.MultiAgentEnv import MultiAgentEnv
 from tool.data_loader import load_data
 from config import system_config
-
-# 收集总体的任务请求、缓存情况
-def collect_info(envs, task_num, dones):
-    new_request = []
-    new_cache = []
-
-    for env, done in zip(envs, dones):
-        # 已经结束的设置为-1
-        if done:
-            cache = [-1] * 2 * task_num
-            request = -1
-        else:
-            cache = env.system_state()[:-1]
-            request = env.system_state()[-1]
-
-        reordered_array = np.empty_like(cache)
-        reordered_array[::2] = cache[:task_num]
-        reordered_array[1::2] = cache[task_num:]
-        cache = reordered_array.reshape(task_num, 2)
-
-        new_cache.append(cache)
-        new_request.append(request)
-    return np.array(new_request), np.array(new_cache)
-
+from gym import spaces
 
 def index2ud(index, ud_num):
     server = index // ud_num
@@ -44,81 +22,80 @@ def index2ud(index, ud_num):
 
 
 if __name__ == '__main__':
-    # 命令行参数设置
-    parser = argparse.ArgumentParser(description='SAC算法参数')
+    # ------------------------------------------------------1. 命令行参数设置-----------------------------------------------------------------------
+    parser = argparse.ArgumentParser(description='基于SAC算法的多服务器多用户设备的3C问题')
     # 环境名称
-    parser.add_argument('--env-name', default="MultiTaskCore",
-                        help='Wireless Comm environment (default: MultiTaskCore)')
+    parser.add_argument('--env-name', default="MultiAgentEnv",
+                        help='环境名称 (default: MultiAgentEnv)')
     # 实验配置
     parser.add_argument('--exp-case', default="case5",
-                        help='The experiment configuration case (default: case 3)')
+                        help='实验配置 (default: case 5)')
     # 策略类型
     parser.add_argument('--policy', default="Gaussian",
-                        help='Policy Type: Gaussian | Deterministic (default: Gaussian)')
+                        help='策略类型: Gaussian(正态) | Deterministic(确定) (default: Gaussian)')
     # 每10次评估一次策略
     parser.add_argument('--eval', type=bool, default=True,
-                        help='Evaluates a policy a policy every 10 episode (default: True)')
+                        help='每 10 episode评估一次策略 (default: True)')
     # 折现因子
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
-                        help='discount factor for reward (default: 0.99)')
+                        help='reward折现因子 (default: 0.99)')
     # 目标平滑系数 θi_bar = ξ * θi + (1 - ξ) * θi_bar
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
-                        help='target smoothing coefficient(τ) (default: 0.005)')
+                        help='目标平滑系数(τ) (default: 0.005)')
     # 学习率
-    parser.add_argument('--lr', type=float, default=1e-4, metavar='G',
-                        help='learning rate (default: 0.0003)')
+    parser.add_argument('--lr', type=float, default=3e-4, metavar='G',
+                        help='学习率 (default: 0.0003)')
     # 熵前面的温度系数
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
-                        help='Temperature parameter α determines the relative importance of the entropy\
-                                term against the reward (default: 0.2)')
+                        help='温度系数 (default: 0.2)')
     # 熵前面的系数是否自动调整
     parser.add_argument('--automatic_entropy_tuning', type=bool, default=True, metavar='G',
-                        help='Automaically adjust α (default: False)')
+                        help='α是否自动调整 (default: True)')
     # 随机种子
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
-                        help='random seed (default: 123456)')
-    # 抽样大小
+                        help='随机种子 (default: 123456)')
+    # 批量大小
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
-                        help='batch size (default: 256)')
+                        help='批量大小 (default: 256)')
     # 最大训练步数
     parser.add_argument('--num_steps', type=int, default=5000001, metavar='N',
-                        help='maximum number of steps (default: 5000001)')
+                        help='最大训练步数 (default: 5000001)')
     # 隐藏层大小
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
-                        help='hidden size (default: 256)')
+                        help='隐藏层大小 (default: 256)')
     # 每次更新参数采样多少次
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
-                        help='model updates per simulator step (default: 1)')
+                        help='每次更新参数采样多少次 (default: 1)')
     # 使用策略网络决策动作前，多少次随机采样
     parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
-                        help='Steps sampling1 random actions (default: 10000)')
+                        help='随机采样次数 (default: 10000)')
     # 目标网络的更新周期
     parser.add_argument('--target_update_interval', type=int, default=1000, metavar='N',
-                        help='Value target update per no. of updates per step (default: 1000)')
+                        help='目标网络的更新周期 (default: 1000)')
     # 经验缓冲区大小
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
-                        help='size of replay buffer (default: 10000000)')
+                        help='经验缓冲区大小 (default: 10000000)')
     # 是否使用cuda
     parser.add_argument('--cuda', action="store_true", default=True,
-                        help='run on CUDA (default: False)')
+                        help='是否使用CUDA (default: True)')
     # 服务器个数
     parser.add_argument('--server_num', type=int, default=2,
-                        help='server number(default: 2)')
+                        help='服务器个数 (default: 2)')
     # 每个服务器的用户设备个数
-    parser.add_argument('--ud_num', type=int, default=2,
-                        help='user device number(default: 3)')
+    parser.add_argument('--ud_num', type=int, default=3,
+                        help='每个服务器的用户设备个数 (default: 3)')
     args = parser.parse_args()
 
-    # 环境设置
+    # ------------------------------------------------------2. 环境设置-----------------------------------------------------------------------
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     agent_num = args.server_num * args.ud_num
 
-    # 保存所有用户设备的任务请求，1 * agent_num，初始化为-1
+    # 保存所有用户设备的任务请求，agent_num，初始化为-1
     server_requests = np.full(agent_num, -1)
 
     # 保存所有用户设备的缓存状态，agent_num * task_num * 2，初始化为0
-    task_num = system_config['F']  # 任务数 6
+    task_num = system_config['F']  # 任务数 8
     maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
@@ -133,35 +110,39 @@ if __name__ == '__main__':
         'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
                                       args.policy, "autotune" if args.automatic_entropy_tuning else ""))
 
-    envs = []
+    snrs=[]
+    Ats=[]
     agents = []
-    memories = []
+    
+    # 动作空间
+    sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
+    sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
+    action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
+    
     for server in range(args.server_num):
         # 该服务器的信噪比
-        snr = load_data('./mydata/temp/dynamic_snrs_' +
-                        str(server+1)+'.csv').reshape(1, -1)[0]
+        snr = load_data('./mydata/temp/dynamic_snrs_' + str(server+1)+'.csv').reshape(1, -1)[0]
         for ud in range(args.ud_num):
             # 该用户设备的任务请求
-            At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) +
-                           "_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1, -1)[0]
-            # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型
-            # 单个用户设备
-            env = MultiTaskCore(init_sys_state=[0] * (2 * task_num) + [1], agent_num=agent_num, task_set=task_set_, requests=At,
-                                channel_snrs=snr, exp_case=args.exp_case)
-            env.action_space.seed(args.seed)
-
+            At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) + "_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1, -1)[0]
+            Ats.append(At)
+            snrs.append(snr)
             # 该用户设备的SAC网络
-            agent = SAC(env.observation_space.shape[0], env.action_space, args)
-            # 该用户设备的SAC网络的经验缓存区
-            memory = ReplayMemory(args.replay_size, args.seed)
-
-            envs.append(env)
+            agent = SAC(2*task_num+1, action_space, args)
             agents.append(agent)
-            memories.append(memory)
+        
+    # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型       
+    env = MultiAgentEnv(init_sys_state=[[0] * (2 * task_num) + [1] for _ in range(agent_num)], agent_num=agent_num, task_set=task_set_, requests=Ats,
+                                channel_snrs=snrs, exp_case=args.exp_case)
+    env.action_space.seed(args.seed)
 
+    # 共享经验缓存区
+    memory = ReplayMemory(args.replay_size, args.seed)
+    
+    # ------------------------------------------------------3. 训练-----------------------------------------------------------------------------
     print("环境初始化完毕，开始训练")
 
-    agent_numsteps = 0  # 总训练步数
+    total_numsteps = 0  # 总训练步数
     updates = 0  # 总更新参数次数
     result_trans = []  # 保存传输消耗评估结果
     result_comp = []  # 保存计算消耗评估结果
@@ -170,26 +151,28 @@ if __name__ == '__main__':
         episode_rewards = np.full(agent_num, 0) # 本回合各agent奖励
         episode_steps = np.full(agent_num, 0) # 本回合各agent交互步数
         dones = np.full(agent_num, False) # 本回合各agent是否结束
-        states = [env.reset() for env in envs]
+        state = env.reset()
 
         # 如果还有agent没有结束
-        while np.sum(dones == False) > 0:  # 训练步数
+        while np.sum(dones == False) > 0:  # 训练步数step
             
-            # 每个agent上传自己的任务请求和缓存情况
-            server_requests, servers_cache_states = collect_info(envs, task_num, dones)
+            # 上传任务请求
+            server_requests = env.get_requests()
             
             # 对每个agent进行训练
-            for index, (env, agent, memory, done, state) in enumerate(zip(envs, agents, memories, dones, states)):
+            for index in range(agent_num):
+                
+                agent = agents[index]
+                done = dones[index]
 
                 # done为True，跳过
                 if done:
                     continue
 
-                if args.start_steps > agent_numsteps:
+                if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
-                    action = agent.select_action(state, server_requests, servers_cache_states)  # 策略动作，传入请求和缓存
-                    
+                    action = agent.select_action(state, server_requests, servers_cache_states)
                     
                 server_index, ud_index = index2ud(index, args.ud_num)
                 
@@ -220,13 +203,13 @@ if __name__ == '__main__':
                 states[index] = next_state
                 dones[index] = done
                 
-            agent_numsteps += 1
+            total_numsteps += 1
 
              
-        if agent_numsteps > args.num_steps:
+        if total_numsteps > args.num_steps:
             break
 
-        print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, agent_numsteps, episode_steps[index]))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, total_numsteps, episode_steps[index]))
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
             writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(

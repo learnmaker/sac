@@ -217,8 +217,8 @@ class MultiTaskCore(object):
         S_O_At = self.sys_state[num_task + A_t]
         # 计算核数
         C_R_At = action[0]
-        # 卸载对象、卸载方式
-        O_u, O_m = action[-2], action[-1]
+        # 卸载对象
+        O = action[-1]
         # print(action)
         
         if S_I_At == 1 or S_O_At == 1:
@@ -228,13 +228,14 @@ class MultiTaskCore(object):
             
         E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
 
+        # 仅被动传输
         if self.reactive_only:
             return B_R + E_R * weight, [B_R, E_R], [B_R, 0, E_R, 0]
 
         E_P = 0
         B_P = 0
         for idx in range(num_task):
-            C_P = 0
+            C_P = 0 # 主动计算分配的计算核数
             E_P += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
             B_P += self.task_set[idx][0] * action[1 + idx] / (tau * math.log2(1 + snr_t))
 
