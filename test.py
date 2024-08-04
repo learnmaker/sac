@@ -10,5 +10,5 @@ def index2ud(index, server_num, ud_num):
     return server, ud
 
 if __name__ == '__main__':
-    action_space = spaces.Box(low=[0], high=[5], dtype=np.float32)
-    action_space.np_random
+    last_use = [[0] * 8 for _ in range(6)]
+    print(last_use)

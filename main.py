@@ -128,11 +128,11 @@ if __name__ == '__main__':
             Ats.append(At)
             snrs.append(snr)
             # 该用户设备的SAC网络
-            agent = SAC(2*task_num+1, action_space, args)
+            agent = SAC(agent_num*(2*task_num+1)+server_requests.size+servers_cache_states.size, action_space, args)
             agents.append(agent)
         
     # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型       
-    env = MultiAgentEnv(init_sys_state=[[0] * (2 * task_num) + [1] for _ in range(agent_num)], agent_num=agent_num, task_set=task_set_, requests=Ats,
+    env = MultiAgentEnv(init_sys_states=[[0] * (2 * task_num) + [1] for _ in range(agent_num)], agent_num=agent_num, task_set=task_set_, requests=Ats,
                                 channel_snrs=snrs, exp_case=args.exp_case)
     env.action_space.seed(args.seed)
 
@@ -158,7 +158,7 @@ if __name__ == '__main__':
             
             # 上传任务请求
             server_requests = env.get_requests()
-            
+            actions=[]
             # 对每个agent进行训练
             for index in range(agent_num):
                 
@@ -175,7 +175,8 @@ if __name__ == '__main__':
                     action = agent.select_action(state, server_requests, servers_cache_states)
                     
                 server_index, ud_index = index2ud(index, args.ud_num)
-                
+                actions.append(action)
+
                 if len(memory) > args.batch_size:
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
@@ -193,17 +194,18 @@ if __name__ == '__main__':
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'entropy_temprature/alpha', alpha, updates)
                         updates += 1
-
-                next_state, reward, done, info = env.step(action)  # Step
-                episode_rewards[index] += reward
-                episode_steps[index] += 1
-                
-                mask = 1 if episode_steps[index] == env._max_episode_steps else float(not done)
-                memory.push(state, action, reward, next_state, mask)
-                states[index] = next_state
-                dones[index] = done
-                
-            total_numsteps += 1
+                        
+            next_state, reward, done, info = env.step(actions)  # Step
+            sys.exit()
+            episode_rewards[index] += reward
+            episode_steps[index] += 1
+            
+            mask = 1 if episode_steps[index] == env._max_episode_steps else float(not done)
+            memory.push(state, action, reward, next_state, mask)
+            states[index] = next_state
+            dones[index] = done
+            
+        total_numsteps += 1
 
              
         if total_numsteps > args.num_steps:

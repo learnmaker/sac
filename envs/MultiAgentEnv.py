@@ -46,16 +46,16 @@ class MultiAgentEnv(object):
         self.global_step = 0
         self.channel_snrs = channel_snrs
         self.requests = requests
-        self.sys_state = init_sys_states
+        self.sys_states = init_sys_states
         for agent_i in range(agent_num):
-            self.sys_state[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests[0])]
-        self.init_sys_state = init_sys_states
+            self.sys_states[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests[0])]
+        self.init_sys_states = init_sys_states
         self._max_episode_steps = MAX_STEPS
         self.task_lists = [[] for _ in range(agent_num)] # 任务列表
         
         self.popularity = [[0] * num_task for _ in range(agent_num)]
         self.last_use = [[0] * num_task for _ in range(agent_num)]
-        
+
         self.reactive_only = False
         self.no_cache = False
         self.heuristic = False
@@ -63,7 +63,7 @@ class MultiAgentEnv(object):
         self.offload = False
         self.exp_case = exp_case
         
-        # print("所选的实验配置为: {}".format(exp_case))
+        print("所选的实验配置为: {}".format(exp_case))
         
         if exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
             self.reactive_only = True
@@ -120,12 +120,15 @@ class MultiAgentEnv(object):
             self.action_high = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1])
     
     def get_requests(self):
-        return [row[-1] for row in self.sys_state]
+        return [row[-1] for row in self.sys_states]
     
     def get_cach_state(self):
-        return [[row[i] for i in range(len(row) - 1)] for row in self.sys_state]
+        return [[row[i] for i in range(len(row) - 1)] for row in self.sys_states]
     
-    def step(self, action):
+    def get_last_use(self):
+        return self.last_use
+    
+    def step(self, actions):
         """
         Parameters
         ----------
@@ -157,12 +160,11 @@ class MultiAgentEnv(object):
         self.global_step += 1
         done = False
         for index in range(self.agent_num):
-            self.last_use[index][int(self.sys_state[index][-1])] = (self.current_step - 1) # 记录资源的最后一次使用时间
-            self.popularity[index][int(self.sys_state[index][-1])] += 1 #记录资源的使用频率
-
-        action, prob_action = self.sample2action(action)
-
-        valid, action = self.check_action_validity(action, prob_action)
+            self.last_use[index][int(self.sys_states[index][-1])] = (self.current_step - 1) # 记录资源的最后一次使用时间
+            self.popularity[index][int(self.sys_states[index][-1])] += 1 #记录资源的使用频率
+            action = actions[index]
+            action, prob_action = self.sample2action(action)
+            valid, action = self.check_action_validity(index, action, prob_action)
 
         # 计算传输消耗和计算消耗
         observation_, observe_details, details2 = self.calc_observation(action)
@@ -170,14 +172,14 @@ class MultiAgentEnv(object):
             done = True
 
         obs = self.next_state(action, valid)
-        self.sys_state = obs    # 更新系统状态
-        self.sys_state[-1] = self.requests[self.global_step % len(self.requests)]
+        self.sys_states = obs    # 更新系统状态
+        self.sys_states[-1] = self.requests[self.global_step % len(self.requests)]
 
         # reward_ = - observation_ ** 2 / 1e12
         reward_ = - observation_ / 1e6
         action = self.action2sample(action)
 
-        return self.scale_state(self.sys_state), reward_, done, {'observe_detail': observe_details, 'action': action}
+        return self.scale_state(self.sys_states), reward_, done, {'observe_detail': observe_details, 'action': action}
 
     def reset(self):
         """
@@ -187,14 +189,14 @@ class MultiAgentEnv(object):
         self.global_step -= 1
         self.sum_Comp = 0
         self.sum_Trans = 0
-        self.popularity = [0] * num_task
-        self.last_use = [0] * num_task
-        self.sys_state = self.init_sys_state.copy()
+        self.popularity = [[0] * num_task for _ in range(self.agent_num)]
+        self.last_use = [[0] * num_task for _ in range(self.agent_num)]
+        self.sys_states = self.init_sys_states.copy()
         for agent_i in range(self.agent_num):
-            self.sys_state[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests[0])]
+            self.sys_states[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests[0])]
         self.task_lists = [[] for _ in range(self.agent_num)]
         
-        return self.scale_state(self.sys_state)
+        return self.scale_state(self.sys_states)
 
     def render(self, mode='human', close=False):
         """Render the environment to the screen"""
@@ -202,7 +204,7 @@ class MultiAgentEnv(object):
 
     # 返回系统状态
     def system_state(self):
-        return self.sys_state.copy()
+        return self.sys_states.copy()
     
     # 计算传输消耗和计算消耗
     def calc_observation(self, action):
@@ -210,13 +212,13 @@ class MultiAgentEnv(object):
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks), O_u, O_m]
         # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
         """
-        A_t = int(self.sys_state[-1])
+        A_t = int(self.sys_states[-1])
         snr_t = self.channel_snrs[self.global_step % len(self.channel_snrs)]
         I_At = self.task_set[A_t][0] # 输入数据大小
         w_At = self.task_set[A_t][2] # 每比特所需计算周期
         # 对应任务缓存状态
-        S_I_At = self.sys_state[A_t]
-        S_O_At = self.sys_state[num_task + A_t]
+        S_I_At = self.sys_states[A_t]
+        S_O_At = self.sys_states[num_task + A_t]
         # 计算核数
         C_R_At = action[0]
         # 卸载对象
@@ -282,12 +284,12 @@ class MultiAgentEnv(object):
         """
         if not is_valid:
             # Not do update when the action is not valid
-            return self.sys_state
+            return self.sys_states
 
-        next_state = [0] * len(self.sys_state)
+        next_state = [0] * len(self.sys_states)
         for idx in range(num_task):
-            S_I = self.sys_state[idx]
-            S_O = self.sys_state[num_task + idx]
+            S_I = self.sys_states[idx]
+            S_O = self.sys_states[num_task + idx]
             dS_I = action[1 + num_task + idx]
             dS_O = action[1 + num_task * 2 + idx]
             next_state[idx] = S_I + dS_I
@@ -296,11 +298,12 @@ class MultiAgentEnv(object):
 
         return np.array(next_state)
 
-    def check_action_validity(self, action, prob_action):
+    # 单个agent
+    def check_action_validity(self, agent_i, action, prob_action):
         """
         Input:
             action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)] 计算核数、主动传输、缓存更新
-            sys_state: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1] 缓存状态、请求任务
+            sys_states: [S_I(f) (all tasks), S_O(f) (all tasks), At], where At = [0, F-1] 缓存状态、请求任务
         Constraints:
             1) I(f) * w(f) / tau <= M * fD     # system constraint (not check here)
             2) I(At) * w(At) / tau <= C_R(At) * fD,     when S_O(At)=0
@@ -313,13 +316,13 @@ class MultiAgentEnv(object):
             9) sum of I(f) * (S_I(f) + dS_I(f)) + O(f) * (S_O(f) +dS_O(f)) <= C
         """
         # 数据准备
-        A_t = int(self.sys_state[-1])
-        S_O_At = self.sys_state[num_task + A_t]
-        I_At = self.task_set[A_t][0]
-        w_At = self.task_set[A_t][2]
-        CR_At = action[0]
+        A_t = int(self.sys_states[agent_i][-1]) # 请求任务
+        S_O_At = self.sys_states[agent_i][num_task + A_t] # 请求任务输出缓存
+        I_At = self.task_set[A_t][0] # 请求任务输入大小
+        w_At = self.task_set[A_t][2] # 每比特所需的计算周期
+        CR_At = action[0] #分配计算核数
 
-        b_f = action[1:1 + num_task].copy()
+        b_f = action[1:1 + num_task].copy() # 主动传输决策
         dS_I_f = action[1 + num_task:1 + num_task * 2].copy()
         dS_O_f = action[1 + num_task * 2:1 + num_task * 3].copy()
 
@@ -327,21 +330,23 @@ class MultiAgentEnv(object):
         dS_I_f_prob = prob_action[1 + num_task:1 + num_task * 2].copy()
         dS_O_f_prob = prob_action[1 + num_task * 2:1 + num_task * 3].copy()
 
-        S_I_f = self.sys_state[:num_task].copy()
-        S_O_f = self.sys_state[num_task:num_task * 2].copy()
-        I_f = [self.task_set[idx][0] for idx in range(num_task)]
-        O_f = [self.task_set[idx][1] for idx in range(num_task)]
+        S_I_f = self.sys_states[agent_i][:num_task].copy() # 输入缓存
+        S_O_f = self.sys_states[agent_i][num_task:num_task * 2].copy() # 输出缓存
+        I_f = [self.task_set[idx][0] for idx in range(num_task)] # 任务输入大小
+        O_f = [self.task_set[idx][1] for idx in range(num_task)] # 任务输出大小
         # w_f = [self.task_set[idx][2] for idx in range(num_task)]
 
         b_f_new = [0] * num_task
         dS_I_f_new = [0] * num_task
         dS_O_f_new = [0] * num_task
+        # ---------------------数据准备结束-------------------
 
         # Constraint (2)
         if I_At * w_At / tau > (CR_At * fD) and S_O_At == 0:
             CR_At = min(math.ceil(I_At * w_At / tau / fD), num_core)
         elif S_O_At == 1:
             CR_At = 0
+
         # choose best fD for reactive processing (only for case 1)
         if self.best_fDs is not None:
             CR_At = self.best_fDs[A_t]
@@ -452,7 +457,7 @@ class MultiAgentEnv(object):
             action[1 + num_task:1 + num_task * 2] = dS_I_f.copy()
             action[1 + num_task * 2:1 + num_task * 3] = dS_O_f.copy()
 
-        # print(action[1 + num_task:1 + num_task * 2], action[1 + num_task * 2:1 + num_task * 3], self.sys_state)
+        # print(action[1 + num_task:1 + num_task * 2], action[1 + num_task * 2:1 + num_task * 3], self.sys_states)
 
         if self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, action[1+num_task:1+num_task*2], action[1+num_task*2:1+num_task*3]):
             return False, action
