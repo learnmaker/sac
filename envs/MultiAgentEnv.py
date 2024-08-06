@@ -158,7 +158,7 @@ class MultiAgentEnv(object):
         """
         self.current_step += 1
         self.global_step += 1
-        done = False
+        dones = np.full(self.agent_num, False)
         new_actions=[]
         new_valid = True
         for index in range(self.agent_num):
@@ -173,19 +173,18 @@ class MultiAgentEnv(object):
 
         # 计算传输消耗和计算消耗
         observation_, observe_details, details2 = self.calc_observation(new_actions)
-        if self.current_step > MAX_STEPS:
-            done = True
+        for i in range(self.agent_num):
+            if self.current_step > MAX_STEPS:
+                dones[i] = True
 
         obs = self.next_state(new_actions, new_valid)
         self.sys_states = obs    # 更新系统状态
-        ----------------------------------------------------------------------------------------------------------------------------------
-        self.sys_states[-1] = self.requests[self.global_step % len(self.requests)]
 
         # reward_ = - observation_ ** 2 / 1e12
-        reward_ = - observation_ / 1e6
-        action = self.action2sample(action)
+        rewards = - observation_ / 1e6
+        actions = self.action2sample(new_actions)
 
-        return self.scale_state(self.sys_states), reward_, done, {'observe_detail': observe_details, 'action': action}
+        return self.scale_state(self.sys_states), rewards, dones, {'observe_details': observe_details, 'actions': actions}
 
     def reset(self):
         """
@@ -218,16 +217,16 @@ class MultiAgentEnv(object):
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks), O_u, O_m]
         # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
         """
-        total_B_R=0
-        total_B_P=0
-        total_E_R=0
-        total_E_P=0
+        total_B_R=[]
+        total_B_P=[]
+        total_E_R=[]
+        total_E_P=[]
         
         # 更新任务列表
         for agent_i in range(self.agent_num):
             A_t = int(self.sys_states[agent_i][-1])
             # 卸载对象
-            O = actions[agent_i][-1]
+            O = int(actions[agent_i][-1])
             if O == -1:
                 self.task_lists[agent_i].append([-1, A_t])
             self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载的A_t任务
@@ -241,6 +240,7 @@ class MultiAgentEnv(object):
             I_download = 0
             I_back = 0
             agent_i_tasks = self.task_lists[agent_i]
+            # 如果任务列表不为空
             if agent_i_tasks:
                 for index, task in enumerate(agent_i_tasks):                    # 对agent的每个任务
                     offload_agent, offload_A_t = task
@@ -276,18 +276,23 @@ class MultiAgentEnv(object):
                 
                 # 处理完所有任务，计算被动传输带宽
                 B_R = (I_download + I_back) / ((tau - C_time) * math.log2(1 + snr_local))
-    
-            total_B_R += B_R
-            total_E_R += E_R
-            total_B_P += B_P
-            total_E_P += E_P
+            else:
+                B_R=0
+                B_P=0
+                E_R=0
+                E_P=0
+                
+            total_B_R.append(B_R)
+            total_E_R.append(E_R)
+            total_B_P.append(B_P)
+            total_E_P.append(E_P)
             
             
         # 仅被动传输
         if self.reactive_only:
-            return B_R + E_R * weight, [B_R, E_R], [B_R, 0, E_R, 0]
+            return np.array(B_R) + np.array(E_R) * weight, [B_R, E_R], [B_R, 0, E_R, 0]
 
-        return B_R + B_P + (E_R + E_P) * weight, [B_R + B_P, E_R + E_P], [B_R, B_P, E_R, E_P]
+        return np.array(B_R) + np.array(B_P) + np.array(E_R + E_P) * weight, [np.array(B_R) + np.array(B_P), np.array(E_R) + np.array(E_P)], [B_R, B_P, E_R, E_P]
 
     # 样本到动作空间
     def sample2action(self, action):
@@ -342,6 +347,7 @@ class MultiAgentEnv(object):
                 next_states[agent_i][num_task + idx] = S_O + dS_O
                 assert 0 <= (S_I + dS_I) <= 1 and 0 <= (S_O + dS_O) <= 1
 
+            next_states[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests)]
         return np.array(next_states)
 
     # 单个agent

@@ -136,8 +136,8 @@ if __name__ == '__main__':
                                 channel_snrs=snrs, exp_case=args.exp_case)
     env.action_space.seed(args.seed)
 
-    # 共享经验缓存区
-    memory = ReplayMemory(args.replay_size, args.seed)
+    # 经验缓存区
+    memories = [ReplayMemory(args.replay_size, args.seed) for _ in range(agent_num)]
     
     # ------------------------------------------------------3. 训练-----------------------------------------------------------------------------
     print("环境初始化完毕，开始训练")
@@ -147,28 +147,31 @@ if __name__ == '__main__':
     result_trans = []  # 保存传输消耗评估结果
     result_comp = []  # 保存计算消耗评估结果
 
-    for i_episode in itertools.count(1):  # 回合数
-        episode_rewards = np.full(agent_num, 0) # 本回合各agent奖励
-        episode_steps = np.full(agent_num, 0) # 本回合各agent交互步数
+    for i_episode in itertools.count(1):   # <------------------------------------ 回合数
+        episode_reward = 0
+        episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
-        state = env.reset()
+        states = env.reset()
 
         # 如果还有agent没有结束
-        while np.sum(dones == False) > 0:  # 训练步数step
+        while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
             
             # 上传任务请求
             server_requests = env.get_requests()
             actions=[]
+            masks=[]
             # 对每个agent进行训练
             for index in range(agent_num):
                 
-                agent = agents[index]
                 done = dones[index]
-
                 # done为True，跳过
                 if done:
                     continue
-
+                
+                agent = agents[index]
+                state = states[index]
+                
+                
                 if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
@@ -176,13 +179,16 @@ if __name__ == '__main__':
                     
                 server_index, ud_index = index2ud(index, args.ud_num)
                 actions.append(action)
+                
+                mask = 1 if episode_step == env._max_episode_steps else float(not done)
+                masks.append(mask)
 
-                if len(memory) > args.batch_size:
+                if len(memories[index]) > args.batch_size:
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
-                            memory, args.batch_size, updates)
+                            memories[index], args.batch_size, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
@@ -195,89 +201,109 @@ if __name__ == '__main__':
                             ud_index+1)+'entropy_temprature/alpha', alpha, updates)
                         updates += 1
                         
-            next_state, reward, done, info = env.step(actions)  # Step
-            sys.exit()
-            episode_rewards[index] += reward
-            episode_steps[index] += 1
+            next_states, rewards, new_dones, infos = env.step(actions)  # Step
+
+            # 执行动作后，立刻更新任务缓存
+            servers_cache_states = env.get_cach_state()
             
-            mask = 1 if episode_steps[index] == env._max_episode_steps else float(not done)
-            memory.push(state, action, reward, next_state, mask)
-            states[index] = next_state
-            dones[index] = done
+            for agent_i in range(agent_num):
+                print(states[agent_i])
+                print(server_requests)
+                print(servers_cache_states)
+                print(actions[agent_i])
+                print(rewards[agent_i])
+                print(next_states[agent_i])
+                print(masks[agent_i])
+                memories[agent_i].push(states[agent_i], server_requests, servers_cache_states, actions[agent_i], rewards[agent_i], next_states[agent_i], masks[agent_i])
+
+            episode_reward += np.sum(rewards)
+            episode_step += 1
             
-        total_numsteps += 1
+            states = next_states
+            dones = new_dones
+            
+            total_numsteps += 1
 
              
         if total_numsteps > args.num_steps:
             break
 
-        print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, total_numsteps, episode_steps[index]))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, total_numsteps, episode_step))
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
-            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                ud_index+1)+'reward/train', episode_rewards[index], i_episode)
-            print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
-
+            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_reward, i_episode)
+            print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_reward, 2)))
 
         # 评估
         eval_freq = 10  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
             
-            avg_rewards = np.full(agent_num, 0)
-            avg_trans_costs = np.full(agent_num, 0)
-            avg_compute_costs = np.full(agent_num, 0)
+            avg_reward = 0
+            avg_trans_cost = 0
+            avg_compute_cost = 0
             episodes = 10  # 取10次的平均值，计算网络的奖励
-            done_steps = np.full(agent_num, 0)
+            done_step = 0
             
             for _ in range(episodes):
                 
-                states = [env.reset() for env in envs]
-                episode_rewards = np.full(agent_num, 0)
-                trans_costs = np.full(agent_num, 0)
-                compute_costs = np.full(agent_num, 0)
+                episode_reward = 0
+                trans_cost = 0
+                compute_cost = 0
+                states = env.reset()
                 dones = np.full(agent_num, False)
                 
                 while np.sum(dones == False) > 0:
-                    for index, (env, agent, memory, done, state) in enumerate(zip(envs, agents, memories, dones, states)):
+                    
+                    # 上传任务请求
+                    server_requests = env.get_requests()
+                    actions=[]
+                    
+                    for index in range(agent_num):
                         
+                        done = dones[index]
                         if done:
                             continue
-            
-                        action = agent.select_action(state, evaluate=True)
-                        next_state, reward, done, info = env.step(action)
-                        episode_rewards[index] += reward
                         
-                        try:
-                            trans_costs[index] += info['observe_detail'][0]
-                            compute_costs[index] += info['observe_detail'][1]
-                            done_steps[index] += 1
-                        except:
-                            pass
-                        states[index] = next_state
-                        dones[index] = done
+                        agent = agents[index]
+                        state = states[index]
+                        
+                        action = agent.select_action(state, server_requests, servers_cache_states)
+                        actions.append(action)
+                        
+                    next_states, rewards, new_dones, infos = env.step(actions)
+                    # 执行动作后，立刻更新任务缓存
+                    servers_cache_states = env.get_cach_state()
+                    
+                    episode_reward += np.sum(rewards)
+                        
+                    try:
+                        trans_cost += np.sum(infos['observe_detail'][0])
+                        compute_cost += np.sum(infos['observe_detail'][1])
+                        done_step += 1
+                    except:
+                        pass
+                    states = next_states
+                    dones = new_dones
 
-                for index in range(agent_num):
-                    server_index, ud_index = index2ud(index, args.ud_num)
-                    avg_rewards[index] += episode_rewards[index]
-                    avg_trans_costs[index] += trans_costs[index]
-                    avg_compute_costs[index] += compute_costs[index]
-
-            print("----------------------------------------")
-            for index in range(agent_num):
-                server_index, ud_index = index2ud(index, args.ud_num)
-                avg_rewards[index] /= episodes  # 每回合的奖励
-                avg_trans_costs[index] /= done_steps[index]  # 每步的传输消耗
-                avg_compute_costs[index] /= done_steps[index]  # 每步的计算消耗
-                writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_avgReward/test', avg_rewards[index], i_episode)
-                print('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+"测试回合: {}, Total Steps: {}, Avg. Reward: {}, Avg. Trans Cost: {}, Avg. Compute Cost: {}, Glb. Step: {}".format(
-                    episodes, int(done_steps[index]), round(avg_rewards[index], 2), round(avg_trans_costs[index], 2), round(avg_compute_costs[index], 2), env.global_step))
-                result_trans.append(avg_trans_costs[index])
-                result_comp.append(avg_compute_costs[index])
-            print("----------------------------------------")
+                avg_reward += episode_reward
+                avg_trans_cost += trans_cost
+                avg_compute_cost += compute_cost
             
+            # 所有agent的总体reward、trans_cost、compute_cost
+            avg_reward /= episodes
+            avg_trans_cost /= done_step
+            avg_compute_cost /= done_step
+            
+            writer.add_scalar('avg_reward/test_episode', avg_reward, i_episode)
+            print("----------------------------------------")
+            print("Test Episodes: {}, Total Steps: {}, Avg. Reward: {}, Avg. Trans Cost: {}, Avg. Compute Cost: {}, Glb. Step: {}".format(
+                episodes, int(done_step), round(avg_reward, 2), round(avg_trans_cost, 2), round(avg_compute_cost, 2), env.global_step))
+            print("----------------------------------------")
+            result_trans.append(avg_trans_cost)
+            result_comp.append(avg_compute_cost)
+
             if len(result_trans) > 10:
-                print_avg_trans = np.average(
-                    np.asarray(result_trans[-10:]))
+                print_avg_trans = np.average(np.asarray(result_trans[-10:]))
                 print_avg_comp = np.average(np.asarray(result_comp[-10:]))
             else:
                 print_avg_trans = np.average(np.asarray(result_trans))
@@ -285,8 +311,6 @@ if __name__ == '__main__':
             print("Final Avg Results for last 100 epoches: Avg. Trans Cost: {}, Avg. Compute Cost: {}".format(
                 round(print_avg_trans, 2), round(print_avg_comp, 2)))
             print("----------------------------------------")
-
-            writer.add_scalar('avg_cost/trans_cost',
-                                round(print_avg_trans, 2), i_episode)
-            writer.add_scalar('avg_cost/comp_cost',
-                                round(print_avg_comp, 2), i_episode)
+            writer.add_scalar('avg_cost/trans_cost', round(print_avg_trans, 2), i_episode)
+            writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
+            

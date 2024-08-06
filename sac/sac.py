@@ -48,7 +48,7 @@ class SAC(object):
         tensor_state = torch.FloatTensor(state)
         tensor_request = torch.FloatTensor(server_requests)
         tensor_cach = torch.FloatTensor(servers_cache_states)
-        state = torch.cat((tensor_state.view(-1), tensor_request, tensor_cach.view(-1)), dim=0).to(self.device).unsqueeze(0) # 拼接矩阵
+        state = torch.cat((tensor_state, tensor_request, tensor_cach.view(-1)), dim=0).to(self.device).unsqueeze(0) # 拼接矩阵
         if evaluate is False:
             action, _, _ = self.policy.sample(state)
         else:
