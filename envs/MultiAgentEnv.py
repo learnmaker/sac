@@ -239,12 +239,18 @@ class MultiAgentEnv(object):
             C_time = 0
             I_download = 0
             I_back = 0
-            agent_i_tasks = self.task_lists[agent_i]
+            snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
+            for idx in range(num_task):
+                C_P = 0
+                E_P += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
+                B_P += self.task_set[idx][0] * actions[agent_i][1 + idx] / (tau * math.log2(1 + snr_local))
+
+                agent_i_tasks = self.task_lists[agent_i]
             # 如果任务列表不为空
             if agent_i_tasks:
-                for index, task in enumerate(agent_i_tasks):                    # 对agent的每个任务
+                for task in agent_i_tasks:                    # 对agent的每个任务
                     offload_agent, offload_A_t = task
-                    snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
+                    
                     I_At = self.task_set[offload_A_t][0] # 输入数据大小
                     O_At = self.task_set[offload_A_t][1] # 输出数据大小
                     w_At = self.task_set[offload_A_t][2] # 每比特所需计算周期
@@ -253,13 +259,7 @@ class MultiAgentEnv(object):
                     S_O_At = self.sys_states[agent_i][num_task + A_t]
                     # 计算核数
                     C_R_At = actions[agent_i][0]
-                    
-                    # 主动传输带宽
-                    B_P += self.task_set[index][0] * actions[agent_i][1 + index] / (tau * math.log2(1 + snr_local))
-                    
-                    C_P = 0
-                    E_P += u * (C_P * fD) ** 2 * self.task_set[index][0] * self.task_set[index][2]  # always 0 since C_P is zero
-                    
+                       
                     # 如果有输出缓存，无需计算、无需传输
                     if S_O_At == 1:
                         E_R += 0
@@ -286,13 +286,16 @@ class MultiAgentEnv(object):
             total_E_R.append(E_R)
             total_B_P.append(B_P)
             total_E_P.append(E_P)
-            
-            
+        total_B_R = np.array(total_B_R)
+        total_E_R = np.array(total_E_R)
+        total_B_P = np.array(total_B_P)
+        total_E_P = np.array(total_E_P)
+
         # 仅被动传输
         if self.reactive_only:
-            return np.array(B_R) + np.array(E_R) * weight, [B_R, E_R], [B_R, 0, E_R, 0]
+            return total_B_R + total_E_R * weight, [total_B_R, total_E_R], [total_B_R, 0, total_E_R, 0]
 
-        return np.array(B_R) + np.array(B_P) + np.array(E_R + E_P) * weight, [np.array(B_R) + np.array(B_P), np.array(E_R) + np.array(E_P)], [B_R, B_P, E_R, E_P]
+        return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P]
 
     # 样本到动作空间
     def sample2action(self, action):

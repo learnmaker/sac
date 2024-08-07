@@ -18,5 +18,5 @@ if __name__ == '__main__':
     arr2 = np.array(list2)
 
     # 或者直接使用 *
-    result_direct = arr1 * arr2 + 5 + arr1
+    result_direct = arr1 + arr2
     print(result_direct)  # 输出: array([ 5, 12, 21, 32])

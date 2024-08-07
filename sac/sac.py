@@ -57,9 +57,11 @@ class SAC(object):
 
     def update_parameters(self, memory, batch_size, updates):
         # 状态、动作、奖励、下一状态、是否结束
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        state_batch, request_batch, cach_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
+        request_batch = torch.FloatTensor(request_batch).to(self.device)
+        cach_batch = torch.FloatTensor(cach_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
         reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)

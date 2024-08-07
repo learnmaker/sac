@@ -207,13 +207,6 @@ if __name__ == '__main__':
             servers_cache_states = env.get_cach_state()
             
             for agent_i in range(agent_num):
-                print(states[agent_i])
-                print(server_requests)
-                print(servers_cache_states)
-                print(actions[agent_i])
-                print(rewards[agent_i])
-                print(next_states[agent_i])
-                print(masks[agent_i])
                 memories[agent_i].push(states[agent_i], server_requests, servers_cache_states, actions[agent_i], rewards[agent_i], next_states[agent_i], masks[agent_i])
 
             episode_reward += np.sum(rewards)
