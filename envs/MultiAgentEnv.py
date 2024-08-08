@@ -73,8 +73,7 @@ class MultiAgentEnv(object):
             self.reactive_only = True
             self.no_cache = True
         elif exp_case == 'case3':  # case 3: with cache, proactive transmission, dynamic fD
-            self.reactive_only = True
-            self.no_cache = True    
+            pass
         elif exp_case == 'case4':  # case 4: with cache, reactive only, dynamic fD
             self.reactive_only = True
         elif exp_case == 'case5':  # case 5: with cache, proactive transmission, dynamic fD, offload
@@ -172,7 +171,7 @@ class MultiAgentEnv(object):
             new_actions.append(action)
 
         # 计算传输消耗和计算消耗
-        observation_, observe_details, details2 = self.calc_observation(new_actions)
+        observation_, observe_details, details2, prize = self.calc_observation(new_actions)
         for i in range(self.agent_num):
             if self.current_step > MAX_STEPS:
                 dones[i] = True
@@ -181,7 +180,7 @@ class MultiAgentEnv(object):
         self.sys_states = obs    # 更新系统状态
 
         # reward_ = - observation_ ** 2 / 1e12
-        rewards = - observation_ / 1e6
+        rewards = - observation_ / 1e6 - prize
         actions = self.action2sample(new_actions)
 
         return self.scale_state(self.sys_states), rewards, dones, {'observe_details': observe_details, 'actions': actions}
@@ -217,10 +216,12 @@ class MultiAgentEnv(object):
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks), O_u, O_m]
         # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
         """
-        total_B_R=[]
-        total_B_P=[]
-        total_E_R=[]
-        total_E_P=[]
+        total_B_R=np.full(self.agent_num, 0.)
+        total_B_P=np.full(self.agent_num, 0.)
+        total_E_R=np.full(self.agent_num, 0.)
+        total_E_P=np.full(self.agent_num, 0.)
+        total_I = np.full(self.agent_num, 0.)
+        prize = np.full(self.agent_num, 0.)
         
         # 更新任务列表
         for agent_i in range(self.agent_num):
@@ -228,64 +229,81 @@ class MultiAgentEnv(object):
             # 卸载对象
             O = int(actions[agent_i][-1])
             if O == -1:
-                self.task_lists[agent_i].append([-1, A_t])
+                self.task_lists[agent_i]=[[-1, A_t]] + self.task_lists[agent_i]
             self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载的A_t任务
-            
-        for agent_i in range(self.agent_num):                 # 对每个agent
-            B_R=0 # 被动传输带宽
-            B_P=0 # 主动传输带宽
-            E_R=0 # 被动计算能耗
-            E_P=0 # 主动计算能耗
+        
+        # 对每个agent
+        for agent_i in range(self.agent_num):         
             C_time = 0
-            I_download = 0
-            I_back = 0
             snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
+            
+            # 主动传输
             for idx in range(num_task):
                 C_P = 0
-                E_P += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
-                B_P += self.task_set[idx][0] * actions[agent_i][1 + idx] / (tau * math.log2(1 + snr_local))
+                total_E_P[agent_i] += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
+                total_B_P[agent_i] += self.task_set[idx][0] * actions[agent_i][1 + idx] / (tau * math.log2(1 + snr_local))
 
-                agent_i_tasks = self.task_lists[agent_i]
+            agent_i_tasks = self.task_lists[agent_i]
+            
+            # 计算核数
+            C_R_At = actions[agent_i][0]
             # 如果任务列表不为空
             if agent_i_tasks:
-                for task in agent_i_tasks:                    # 对agent的每个任务
+                
+                flag = False
+                local_At = -1
+                
+                # 对agent的每个任务
+                for task in agent_i_tasks:
                     offload_agent, offload_A_t = task
+                    
+                    if flag:
+                        total_I[offload_agent] += 999999
+                        continue
+                    
+                    E_R=0
+                    B_R=0                    
                     
                     I_At = self.task_set[offload_A_t][0] # 输入数据大小
                     O_At = self.task_set[offload_A_t][1] # 输出数据大小
                     w_At = self.task_set[offload_A_t][2] # 每比特所需计算周期
                     # 对应任务缓存状态
-                    S_I_At = self.sys_states[agent_i][A_t]
-                    S_O_At = self.sys_states[agent_i][num_task + A_t]
-                    # 计算核数
-                    C_R_At = actions[agent_i][0]
-                       
+                    S_I_At = self.sys_states[agent_i][offload_A_t]
+                    S_O_At = self.sys_states[agent_i][num_task + offload_A_t]
+                    
                     # 如果有输出缓存，无需计算、无需传输
-                    if S_O_At == 1:
-                        E_R += 0
+                    if S_O_At == 1 or offload_A_t == local_At:
+                        E_R = 0
+                        B_R = 0
                     # 否则，需要计算
                     else:
-                        E_R += (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
                         C_time += I_At * w_At / (C_R_At * fD)
+                        # 如果计算时间大于最大容许延迟
+                        if C_time >= tau:
+                            C_time -= I_At * w_At / (C_R_At * fD)
+                            flag = True
+                            continue
+                        
+                        E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
+                            
                         # 如果没有输入数据，需要从服务器下载数据
-                        if S_I_At == 0:
-                            I_download += I_At
+                        if S_I_At == 0 and  offload_A_t != local_At:
+                            total_I[agent_i] += I_At
+                            B_R += I_At
+                            
                     # 最后，如果是卸载任务，需要回传
                     if offload_agent != -1:
-                        I_back += O_At
-                
+                        total_I[agent_i] += O_At
+                        B_R += O_At
+                        total_I[offload_agent] += O_At
+                        prize[agent_i] += (E_R * weight + B_R) * 1.2
+                    else:
+                        local_At = offload_A_t
+                    total_E_R[agent_i] += E_R
+                    
                 # 处理完所有任务，计算被动传输带宽
-                B_R = (I_download + I_back) / ((tau - C_time) * math.log2(1 + snr_local))
-            else:
-                B_R=0
-                B_P=0
-                E_R=0
-                E_P=0
-                
-            total_B_R.append(B_R)
-            total_E_R.append(E_R)
-            total_B_P.append(B_P)
-            total_E_P.append(E_P)
+                total_B_R[agent_i] = total_I[agent_i] / ((tau - C_time) * math.log2(1 + snr_local))
+
         total_B_R = np.array(total_B_R)
         total_E_R = np.array(total_E_R)
         total_B_P = np.array(total_B_P)
@@ -293,9 +311,9 @@ class MultiAgentEnv(object):
 
         # 仅被动传输
         if self.reactive_only:
-            return total_B_R + total_E_R * weight, [total_B_R, total_E_R], [total_B_R, 0, total_E_R, 0]
+            return total_B_R + total_E_R * weight, [total_B_R, total_E_R], [total_B_R, 0, total_E_R, 0], prize
 
-        return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P]
+        return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P], prize
 
     # 样本到动作空间
     def sample2action(self, action):
@@ -375,7 +393,7 @@ class MultiAgentEnv(object):
         S_O_At = self.sys_states[agent_i][num_task + A_t] # 请求任务输出缓存
         I_At = self.task_set[A_t][0] # 请求任务输入大小
         w_At = self.task_set[A_t][2] # 每比特所需的计算周期
-        CR_At = action[0] #分配计算核数
+        CR_At = action[0] # 分配计算核数
 
         b_f = action[1:1 + num_task].copy() # 主动传输决策
         dS_I_f = action[1 + num_task:1 + num_task * 2].copy()

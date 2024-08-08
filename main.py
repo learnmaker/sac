@@ -128,7 +128,7 @@ if __name__ == '__main__':
             Ats.append(At)
             snrs.append(snr)
             # 该用户设备的SAC网络
-            agent = SAC(2*task_num+1+server_requests.size+servers_cache_states.size, action_space, args)
+            agent = SAC(2*task_num+1 + server_requests.size + servers_cache_states.size, action_space, args)
             agents.append(agent)
         
     # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型       
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     result_comp = []  # 保存计算消耗评估结果
 
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
-        episode_rewards = np.full(agent_num, 0)
+        episode_rewards = np.full(agent_num, 0.)
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
@@ -221,7 +221,7 @@ if __name__ == '__main__':
         if total_numsteps > args.num_steps:
             break
 
-        print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, total_numsteps, episode_step))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 总回报：{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)))
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
             writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
@@ -244,11 +244,11 @@ if __name__ == '__main__':
                 compute_cost = 0
                 states = env.reset()
                 dones = np.full(agent_num, False)
+                server_requests = env.get_requests()
+                ervers_cache_states = env.get_cach_state()
                 
                 while np.sum(dones == False) > 0:
                     
-                    # 上传任务请求
-                    server_requests = env.get_requests()
                     actions=[]
                     
                     for index in range(agent_num):
@@ -265,7 +265,8 @@ if __name__ == '__main__':
                         
                     next_states, rewards, new_dones, infos = env.step(actions)
                     # 执行动作后，立刻更新任务缓存
-                    servers_cache_states = env.get_cach_state()
+                    server_requests = env.get_requests()
+                    ervers_cache_states = env.get_cach_state()
                     
                     episode_reward += np.sum(rewards)
                         

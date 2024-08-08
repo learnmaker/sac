@@ -1,4 +1,5 @@
 import multiprocessing
+import sys
 import time
 import numpy as np
 import torch
@@ -10,13 +11,10 @@ def index2ud(index, server_num, ud_num):
     return server, ud
 
 if __name__ == '__main__':
-    list1 = [1, 2, 3, 4]
-    list2 = [5, 6, 7, 8]
+    # 获取C long类型的最大值
+    c_long_max = sys.maxsize
+    print("C long max size:", c_long_max)
 
-    # 转换为 NumPy 数组
-    arr1 = np.array(list1)
-    arr2 = np.array(list2)
-
-    # 或者直接使用 *
-    result_direct = arr1 + arr2
-    print(result_direct)  # 输出: array([ 5, 12, 21, 32])
+    # 获取C long类型的实际位数
+    c_long_bit_size = sys.maxsize.bit_length()
+    print("C long bit size:", c_long_bit_size)
