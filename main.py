@@ -118,7 +118,7 @@ if __name__ == '__main__':
     sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
     sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
-    
+
     for server in range(args.server_num):
         # 该服务器的信噪比
         snr = load_data('./mydata/temp/dynamic_snrs_' + str(server+1)+'.csv').reshape(1, -1)[0]
@@ -128,7 +128,7 @@ if __name__ == '__main__':
             Ats.append(At)
             snrs.append(snr)
             # 该用户设备的SAC网络
-            agent = SAC(agent_num*(2*task_num+1)+server_requests.size+servers_cache_states.size, action_space, args)
+            agent = SAC(2*task_num+1+server_requests.size+servers_cache_states.size, action_space, args)
             agents.append(agent)
         
     # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型       
@@ -148,16 +148,16 @@ if __name__ == '__main__':
     result_comp = []  # 保存计算消耗评估结果
 
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
-        episode_reward = 0
+        episode_rewards = np.full(agent_num, 0)
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
-
+        server_requests = env.get_requests()
+        servers_cache_states = env.get_cach_state()
+        
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
             
-            # 上传任务请求
-            server_requests = env.get_requests()
             actions=[]
             masks=[]
             # 对每个agent进行训练
@@ -202,21 +202,21 @@ if __name__ == '__main__':
                         updates += 1
                         
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-
-            # 执行动作后，立刻更新任务缓存
+            old_requests = server_requests
+            old_cach = servers_cache_states
+            server_requests = env.get_requests()
             servers_cache_states = env.get_cach_state()
             
             for agent_i in range(agent_num):
-                memories[agent_i].push(states[agent_i], server_requests, servers_cache_states, actions[agent_i], rewards[agent_i], next_states[agent_i], masks[agent_i])
-
-            episode_reward += np.sum(rewards)
+                memories[agent_i].push(states[agent_i], old_requests, old_cach, actions[agent_i], rewards[agent_i], next_states[agent_i], server_requests, servers_cache_states, masks[agent_i])
+                episode_rewards[agent_i] += rewards[agent_i]
+                
             episode_step += 1
             
             states = next_states
             dones = new_dones
             
             total_numsteps += 1
-
              
         if total_numsteps > args.num_steps:
             break
@@ -224,8 +224,8 @@ if __name__ == '__main__':
         print("Episode: {}, 总训练步数: {}, 本回合步数: {}".format(i_episode, total_numsteps, episode_step))
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
-            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_reward, i_episode)
-            print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_reward, 2)))
+            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
+            print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
 
         # 评估
         eval_freq = 10  # 评估频率

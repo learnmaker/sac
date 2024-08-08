@@ -57,22 +57,28 @@ class SAC(object):
 
     def update_parameters(self, memory, batch_size, updates):
         # 状态、动作、奖励、下一状态、是否结束
-        state_batch, request_batch, cach_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
+        state_batch, old_request_batch, old_cach_batch, action_batch, reward_batch, next_state_batch, request_batch, cach_batch, mask_batch = memory.sample(batch_size=batch_size)
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
+        old_request_batch = torch.FloatTensor(old_request_batch).to(self.device)
+        old_cach_batch = torch.FloatTensor(old_cach_batch).to(self.device)
+        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
         request_batch = torch.FloatTensor(request_batch).to(self.device)
         cach_batch = torch.FloatTensor(cach_batch).to(self.device)
-        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
         reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
         mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
 
+        state = torch.cat((state_batch, old_request_batch, old_cach_batch.view(batch_size,-1)), dim=1)
+        next_state = torch.cat((next_state_batch, request_batch, cach_batch.view(batch_size,-1)), dim=1)
+        
         with torch.no_grad():
-            next_state_action, next_state_log_pi, _ = self.policy.sample(next_state_batch)
-            qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_state_action)
+            next_state_action, next_state_log_pi, _ = self.policy.sample(next_state)
+            qf1_next_target, qf2_next_target = self.critic_target(next_state, next_state_action)
             min_qf_next_target = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_state_log_pi
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_next_target)
-        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
+            
+        qf1, qf2 = self.critic(state, action_batch)  # Two Q-functions to mitigate positive bias in the policy improvement step
         qf1_loss = F.mse_loss(qf1, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf2_loss = F.mse_loss(qf2, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf_loss = qf1_loss + qf2_loss
@@ -81,9 +87,9 @@ class SAC(object):
         qf_loss.backward()
         self.critic_optim.step()
 
-        pi, log_pi, _ = self.policy.sample(state_batch)
+        pi, log_pi, _ = self.policy.sample(state)
 
-        qf1_pi, qf2_pi = self.critic(state_batch, pi)
+        qf1_pi, qf2_pi = self.critic(state, pi)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
 
         policy_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
