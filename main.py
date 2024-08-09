@@ -1,9 +1,12 @@
 import argparse
 import datetime
+import math
+import os
 import numpy as np
 import itertools
 import torch
 import sys
+import csv
 from sac.sac import SAC
 from tool.generate_snrs import generate_snrs
 from tool.samples_from_transmat import generate_request
@@ -20,6 +23,37 @@ def index2ud(index, ud_num):
     ud = index - server * ud_num
     return server, ud
 
+def find_max_digit_position(num):
+    if num == 0:
+        return 1  # 特殊情况：0 的最大位数为 1
+    max_digit_position = int(math.log10(abs(num))) + 1
+    return max_digit_position
+def set_fieldnames(agent_num):
+    fd1=[]
+    fd2=[]
+    fd3=['avg_reward/test_episode', 'avg_cost/trans_cost', 'avg_cost/comp_cost']
+    for index in range(agent_num):
+        server_index, ud_index = index2ud(index, args.ud_num)
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_1')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/critic_2')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/policy')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/entropy_loss')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'entropy_temprature/alpha')
+        fd2.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train')
+    fd2.append("total_reward")
+    data1.append(fd1)
+    data2.append(fd2)
+    data3.append(fd3)
+    return
+    
+        
+data_directory = "runs/data"
+filename1 = "update_parameters.csv"
+data1 = []
+filename2 = "episode_rewards.csv"
+data2 = []
+filename3 = "eval.csv"
+data3 = []
 
 if __name__ == '__main__':
     # ------------------------------------------------------1. 命令行参数设置-----------------------------------------------------------------------
@@ -28,7 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--env-name', default="MultiAgentEnv",
                         help='环境名称 (default: MultiAgentEnv)')
     # 实验配置
-    parser.add_argument('--exp-case', default="case5",
+    parser.add_argument('--exp-case', default="case3",
                         help='实验配置 (default: case 5)')
     # 策略类型
     parser.add_argument('--policy', default="Gaussian",
@@ -90,7 +124,8 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     agent_num = args.server_num * args.ud_num
-
+    set_fieldnames(agent_num)
+    
     # 保存所有用户设备的任务请求，agent_num，初始化为-1
     server_requests = np.full(agent_num, -1)
 
@@ -109,7 +144,12 @@ if __name__ == '__main__':
     writer = SummaryWriter(
         'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
                                       args.policy, "autotune" if args.automatic_entropy_tuning else ""))
-
+    filename1 = '{}_SAC_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy, "autotune" if args.automatic_entropy_tuning else "") + filename1
+    filename2 = '{}_SAC_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy, "autotune" if args.automatic_entropy_tuning else "") + filename2
+    filename3 = '{}_SAC_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy, "autotune" if args.automatic_entropy_tuning else "") + filename3
     snrs=[]
     Ats=[]
     agents = []
@@ -154,7 +194,7 @@ if __name__ == '__main__':
         states = env.reset()
         server_requests = env.get_requests()
         servers_cache_states = env.get_cach_state()
-        
+
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
             
@@ -184,6 +224,7 @@ if __name__ == '__main__':
                 masks.append(mask)
 
                 if len(memories[index]) > args.batch_size:
+                    temp_data1=[]
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
@@ -199,8 +240,14 @@ if __name__ == '__main__':
                             ud_index+1)+'loss/entropy_loss', ent_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'entropy_temprature/alpha', alpha, updates)
+                        temp_data1.append(critic_1_loss)
+                        temp_data1.append(critic_2_loss)
+                        temp_data1.append(policy_loss)
+                        temp_data1.append(ent_loss)
+                        temp_data1.append(alpha)
                         updates += 1
-                        
+                    data1.append(temp_data1)   
+                    
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
             old_requests = server_requests
             old_cach = servers_cache_states
@@ -221,11 +268,14 @@ if __name__ == '__main__':
         if total_numsteps > args.num_steps:
             break
 
-        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 总回报：{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 总回报：{}, 最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
+        temp_data2 = []
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
             writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
+            temp_data2.append(episode_rewards[index])
             print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
+        data2.append(temp_data2)
 
         # 评估
         eval_freq = 10  # 评估频率
@@ -238,7 +288,6 @@ if __name__ == '__main__':
             done_step = 0
             
             for _ in range(episodes):
-                
                 episode_reward = 0
                 trans_cost = 0
                 compute_cost = 0
@@ -271,11 +320,12 @@ if __name__ == '__main__':
                     episode_reward += np.sum(rewards)
                         
                     try:
-                        trans_cost += np.sum(infos['observe_detail'][0])
-                        compute_cost += np.sum(infos['observe_detail'][1])
+                        trans_cost += np.sum(infos['observe_details'][0])
+                        compute_cost += np.sum(infos['observe_details'][1])
                         done_step += 1
                     except:
                         pass
+                    
                     states = next_states
                     dones = new_dones
 
@@ -307,4 +357,41 @@ if __name__ == '__main__':
             print("----------------------------------------")
             writer.add_scalar('avg_cost/trans_cost', round(print_avg_trans, 2), i_episode)
             writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
-            
+            data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2)])
+
+        # 每回合结束写入一次数据
+        file_path1=os.path.join(data_directory, filename1)
+        file_path2=os.path.join(data_directory, filename2)
+        file_path3=os.path.join(data_directory, filename3)
+        if i_episode==1:
+            if not os.path.exists(data_directory):
+                os.makedirs(data_directory)
+            # 写入表头
+            with open(file_path1, mode='w', newline='', encoding='utf-8') as file:
+                writer1 = csv.writer(file)
+                for row in data1:
+                    writer1.writerow(row)
+            with open(file_path2, mode='w', newline='', encoding='utf-8') as file:
+                writer2 = csv.writer(file)
+                for row in data2:
+                    writer2.writerow(row)
+            with open(file_path3, mode='w', newline='', encoding='utf-8') as file:
+                writer3 = csv.writer(file)
+                for row in data3:
+                    writer3.writerow(row)
+        else:
+            with open(file_path1, mode='a', newline='', encoding='utf-8') as file:
+                writer1 = csv.writer(file)
+                for row in data1:
+                    writer1.writerow(row)
+            with open(file_path2, mode='a', newline='', encoding='utf-8') as file:
+                writer2 = csv.writer(file)
+                for row in data2:
+                    writer2.writerow(row)
+            with open(file_path3, mode='a', newline='', encoding='utf-8') as file:
+                writer3 = csv.writer(file)
+                for row in data3:
+                    writer3.writerow(row)
+        data1 = []
+        data2 = []
+        data3 = []
