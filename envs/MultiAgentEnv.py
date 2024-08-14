@@ -61,6 +61,7 @@ class MultiAgentEnv(object):
         self.heuristic = False
         self.best_fDs = None
         self.offload = False
+        self.lstm = False
         self.exp_case = exp_case
         
         print("所选的实验配置为: {}".format(exp_case))
@@ -80,6 +81,8 @@ class MultiAgentEnv(object):
             self.offload = True
         elif exp_case == 'case6' or exp_case == 'case7':   # case 6, 7: MRU cache + LRU replace, MFU cache + LFU replace
             self.heuristic = True
+        elif exp_case == 'case8':
+            self.lstm = True
 
         # 系统动作上下限 1 + F + F*2 + 1 计算核数、输入数据是否主动推送、缓存更新、卸载对象
         self.sample_low = np.asarray([-1] * (3 * num_task + 2), dtype=np.float32)
@@ -109,7 +112,7 @@ class MultiAgentEnv(object):
             self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1])
             self.action_high = np.asarray([num_core] + [0]*num_task + [1]*num_task*2 + [-1])
             
-        elif self.exp_case == 'case5':  # case 5: with cache, proactive transmit, dynamic fD, offload
+        elif self.exp_case == 'case5' or exp_case == 'case8':  # case 5: with cache, proactive transmit, dynamic fD, offload
             self.action_low = np.asarray([0] + [0]*num_task + [-1]*num_task*2 + [-1])
             self.action_high = np.asarray([num_core] + [1]*num_task + [1]*num_task*2 + [agent_num-1])
             

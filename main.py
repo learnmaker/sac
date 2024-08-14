@@ -28,6 +28,7 @@ def find_max_digit_position(num):
         return 1  # 特殊情况：0 的最大位数为 1
     max_digit_position = int(math.log10(abs(num))) + 1
     return max_digit_position
+
 def set_fieldnames(agent_num):
     fd1=[]
     fd2=[]
@@ -45,7 +46,29 @@ def set_fieldnames(agent_num):
     data2.append(fd2)
     data3.append(fd3)
     return
+
+def add_state(i, state, server_requests, servers_cache_states):
+    state = np.array(state)
+    server_requests = np.array(server_requests)
+    servers_cache_states = np.array(servers_cache_states)
     
+    print(state_sequence)
+    if len(state_sequence[i]) < sequence_length:
+        state_sequence[i].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
+    else:
+        state_sequence[i] = state_sequence[i][1:].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
+    return
+
+def get_state_sequence(i, state_dim):
+    current_time_step = len(state_sequence[i])
+    # 如果当前时间步少于序列长度，用0填充
+    if current_time_step < sequence_length:
+        padding = [np.zeros(state_dim) for _ in range(sequence_length - current_time_step)]
+        state_sequence_new = padding + state_sequence[i]
+    else:
+        state_sequence_new = state_sequence[i]
+    
+    return  state_sequence_new   
         
 data_directory = "runs/data"
 filename1 = "update_parameters.csv"
@@ -55,6 +78,9 @@ data2 = []
 filename3 = "eval.csv"
 data3 = []
 
+sequence_length = 10
+state_sequence = [[] for _ in range(sequence_length)]
+
 if __name__ == '__main__':
     # ------------------------------------------------------1. 命令行参数设置-----------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='基于SAC算法的多服务器多用户设备的3C问题')
@@ -62,11 +88,14 @@ if __name__ == '__main__':
     parser.add_argument('--env-name', default="MultiAgentEnv",
                         help='环境名称 (default: MultiAgentEnv)')
     # 实验配置
-    parser.add_argument('--exp-case', default="case3",
+    parser.add_argument('--exp-case', default="case5",
                         help='实验配置 (default: case 5)')
     # 策略类型
     parser.add_argument('--policy', default="Gaussian",
                         help='策略类型: Gaussian(正态) | Deterministic(确定) (default: Gaussian)')
+    # 是否使用LSTM
+    parser.add_argument('--lstm', type=bool, default=True,
+                        help='是否使用LSTM (default: True)')
     # 每10次评估一次策略
     parser.add_argument('--eval', type=bool, default=True,
                         help='每 10 episode评估一次策略 (default: True)')
@@ -124,6 +153,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     agent_num = args.server_num * args.ud_num
+    # 设置表头
     set_fieldnames(agent_num)
     
     # 保存所有用户设备的任务请求，agent_num，初始化为-1
@@ -158,7 +188,8 @@ if __name__ == '__main__':
     sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
     sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
-
+    state_dim = 2*task_num+1 + server_requests.size + servers_cache_states.size
+    
     for server in range(args.server_num):
         # 该服务器的信噪比
         snr = load_data('./mydata/temp/dynamic_snrs_' + str(server+1)+'.csv').reshape(1, -1)[0]
@@ -168,7 +199,7 @@ if __name__ == '__main__':
             Ats.append(At)
             snrs.append(snr)
             # 该用户设备的SAC网络
-            agent = SAC(2*task_num+1 + server_requests.size + servers_cache_states.size, action_space, args)
+            agent = SAC(state_dim, action_space, args)
             agents.append(agent)
         
     # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型       
@@ -194,7 +225,8 @@ if __name__ == '__main__':
         states = env.reset()
         server_requests = env.get_requests()
         servers_cache_states = env.get_cach_state()
-
+        h_cs = [agent.actor.init_hidden(args.hidden_size) for agent in agents]
+        
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
             
@@ -210,13 +242,15 @@ if __name__ == '__main__':
                 
                 agent = agents[index]
                 state = states[index]
-                
+                add_state(index, state, server_requests, servers_cache_states)
                 
                 if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
-                    action = agent.select_action(state, server_requests, servers_cache_states)
+                    state_sequence = get_state_sequence(index, state_dim)
+                    action, h_cs[index] = agent.select_action(state_sequence, h_cs[index])
                     
+                 
                 server_index, ud_index = index2ud(index, args.ud_num)
                 actions.append(action)
                 
@@ -253,10 +287,10 @@ if __name__ == '__main__':
             old_cach = servers_cache_states
             server_requests = env.get_requests()
             servers_cache_states = env.get_cach_state()
-            
-            for agent_i in range(agent_num):
-                memories[agent_i].push(states[agent_i], old_requests, old_cach, actions[agent_i], rewards[agent_i], next_states[agent_i], server_requests, servers_cache_states, masks[agent_i])
-                episode_rewards[agent_i] += rewards[agent_i]
+
+            for i in range(agent_num):
+                memories[i].push(states[i], old_requests, old_cach, actions[i], rewards[i], next_states[i], server_requests, servers_cache_states, masks[i])
+                episode_rewards[i] += rewards[i]
                 
             episode_step += 1
             
@@ -275,6 +309,7 @@ if __name__ == '__main__':
             writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
             temp_data2.append(episode_rewards[index])
             print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
+        temp_data2.append(sum(temp_data2))
         data2.append(temp_data2)
 
         # 评估
