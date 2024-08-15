@@ -16,6 +16,7 @@ class SAC(object):
         self.target_update_interval = args.target_update_interval # 更新目标网络频率
         self.automatic_entropy_tuning = args.automatic_entropy_tuning # 是否自动调整熵的权重
         self.LSTM = args.lstm
+        self.hidden_dim = args.hidden_size
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
         # critic网络
@@ -81,30 +82,24 @@ class SAC(object):
 
     def update_parameters(self, memory, batch_size, updates):
         # 状态、动作、奖励、下一状态、是否结束
-        state_batch, old_request_batch, old_cach_batch, action_batch, reward_batch, next_state_batch, request_batch, cach_batch, mask_batch = memory.sample(batch_size=batch_size)
+        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
         state_batch = torch.FloatTensor(state_batch).to(self.device)
-        old_request_batch = torch.FloatTensor(old_request_batch).to(self.device)
-        old_cach_batch = torch.FloatTensor(old_cach_batch).to(self.device)
         next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
-        request_batch = torch.FloatTensor(request_batch).to(self.device)
-        cach_batch = torch.FloatTensor(cach_batch).to(self.device)
         action_batch = torch.FloatTensor(action_batch).to(self.device)
         reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
         mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
-
-        state = torch.cat((state_batch, old_request_batch, old_cach_batch.view(batch_size,-1)), dim=1)
-        next_state = torch.cat((next_state_batch, request_batch, cach_batch.view(batch_size,-1)), dim=1)
         
         # 计算next_q_value
         with torch.no_grad():
-            action_target, log_pi_target, _, _ = self.actor_target.sample(next_state)
-            qf1_target, qf2_target = self.critic_target(next_state, action_target)
+            new_h_c = self.actor_target.init_hidden(self.hidden_dim, self.device)
+            action_target, log_pi_target, _, _ = self.actor_target.sample(state_batch, new_h_c)
+            qf1_target, qf2_target = self.critic_target(state_batch, action_target)
             min_qf_target = torch.min(qf1_target, qf2_target) - self.alpha * log_pi_target
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_target)
         
         # 更新critic
-        qf1, qf2 = self.critic(state, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
+        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
         qf1_loss = F.mse_loss(qf1, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf2_loss = F.mse_loss(qf2, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
         qf_loss = qf1_loss + qf2_loss
@@ -114,8 +109,8 @@ class SAC(object):
         self.critic_optim.step()
 
         # 更新actor
-        pi, log_pi, _, _ = self.actor.sample(state)
-        qf1_pi, qf2_pi = self.critic(state, pi)
+        pi, log_pi, _, _ = self.actor.sample(state_batch)
+        qf1_pi, qf2_pi = self.critic(state_batch, pi)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
         actor_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
 

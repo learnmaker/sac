@@ -80,16 +80,16 @@ class LSTMCritic(nn.Module):
         # Q2 architecture
         self.lstm = nn.LSTM(num_inputs, hidden_dim)
         self.fc_action = nn.Linear(num_actions, hidden_dim)
-        self.linear1 = nn.Linear(hidden_dim*2, hidden_dim)
-        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        self.linear3 = nn.Linear(hidden_dim, 1)
+        self.linear4 = nn.Linear(hidden_dim*2, hidden_dim)
+        self.linear5 = nn.Linear(hidden_dim, hidden_dim)
+        self.linear6 = nn.Linear(hidden_dim, 1)
         
         self.apply(weights_init_)
     
     def forward(self, state, action, hidden=None):
         lstm_out, _ = self.lstm(state, hidden)
         action_emb = self.fc_action(action)
-        out = torch.cat((lstm_out[-1, :], action_emb), dim=1)
+        out = torch.cat((lstm_out[:, -1, :], action_emb), dim=1)
         
         x1 = F.relu(self.linear1(out))
         x1 = F.relu(self.linear2(x1))
@@ -214,23 +214,23 @@ class LSTMActorGaussian(nn.Module):
             
         self.apply(weights_init_)
         
-    def init_hidden(self, hidden_dim):
+    def init_hidden(self, hidden_dim, device):
         # 初始化隐藏状态 h_0 和细胞状态 c_0
-        h_0 = torch.zeros(num_layers, 1, hidden_dim)
-        c_0 = torch.zeros(num_layers, 1, hidden_dim)
+        h_0 = torch.zeros(num_layers, 10, hidden_dim).to(device)
+        c_0 = torch.zeros(num_layers, 10, hidden_dim).to(device)
         return (h_0, c_0)
     
-    def forward(self, state_sequence, h_c):
+    def forward(self, state_sequence, h_c=None):
         lstm_out, h_c = self.lstm(state_sequence, h_c)
-        lstm_out = lstm_out.squeeze(0)[-1, :]
-        x = F.relu(self.fc(lstm_out.unsqueeze(0)))  # 取最后一个时间步的输出
+        lstm_out = lstm_out[:, -1, :] # 取最后一个时间步的输出
+        x = F.relu(self.fc(lstm_out))  
         
         mean = self.mean_linear(x)
         log_std = self.log_std_linear(x)
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX) # 限制在规定范围内
         return mean, log_std, h_c
     
-    def sample(self, state_sequence, h_c):
+    def sample(self, state_sequence, h_c=None):
         mean, log_std, h_c = self.forward(state_sequence, h_c)
         std = log_std.exp()
         normal = Normal(mean, std) # 使用预测的均值和标准差创建一个正态分布

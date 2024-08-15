@@ -52,11 +52,11 @@ def add_state(i, state, server_requests, servers_cache_states):
     server_requests = np.array(server_requests)
     servers_cache_states = np.array(servers_cache_states)
     
-    print(state_sequence)
     if len(state_sequence[i]) < sequence_length:
         state_sequence[i].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
     else:
-        state_sequence[i] = state_sequence[i][1:].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
+        state_sequence[i] = state_sequence[i][1:]
+        state_sequence[i].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
     return
 
 def get_state_sequence(i, state_dim):
@@ -79,7 +79,7 @@ filename3 = "eval.csv"
 data3 = []
 
 sequence_length = 10
-state_sequence = [[] for _ in range(sequence_length)]
+state_sequence = []
 
 if __name__ == '__main__':
     # ------------------------------------------------------1. 命令行参数设置-----------------------------------------------------------------------
@@ -153,6 +153,9 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     agent_num = args.server_num * args.ud_num
+    device = torch.device("cuda" if args.cuda else "cpu")
+    state_sequence = [[] for _ in range(agent_num)]
+
     # 设置表头
     set_fieldnames(agent_num)
     
@@ -219,14 +222,18 @@ if __name__ == '__main__':
     result_comp = []  # 保存计算消耗评估结果
 
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
+        # 初始化
         episode_rewards = np.full(agent_num, 0.)
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
         server_requests = env.get_requests()
         servers_cache_states = env.get_cach_state()
-        h_cs = [agent.actor.init_hidden(args.hidden_size) for agent in agents]
-        
+        h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+        for i in range(agent_num):
+            state = states[i]
+            add_state(i, state, server_requests, servers_cache_states)
+
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
             
@@ -242,13 +249,12 @@ if __name__ == '__main__':
                 
                 agent = agents[index]
                 state = states[index]
-                add_state(index, state, server_requests, servers_cache_states)
                 
                 if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
-                    state_sequence = get_state_sequence(index, state_dim)
-                    action, h_cs[index] = agent.select_action(state_sequence, h_cs[index])
+                    state_seq = get_state_sequence(index, state_dim)
+                    action, h_cs[index] = agent.select_action(state_seq, h_cs[index])
                     
                  
                 server_index, ud_index = index2ud(index, args.ud_num)
@@ -283,13 +289,14 @@ if __name__ == '__main__':
                     data1.append(temp_data1)   
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-            old_requests = server_requests
-            old_cach = servers_cache_states
             server_requests = env.get_requests()
             servers_cache_states = env.get_cach_state()
-
             for i in range(agent_num):
-                memories[i].push(states[i], old_requests, old_cach, actions[i], rewards[i], next_states[i], server_requests, servers_cache_states, masks[i])
+                state_seq = get_state_sequence(i, state_dim)
+                add_state(i, next_states[i], server_requests, servers_cache_states)
+                next_state_seq = get_state_sequence(i, state_dim)
+
+                memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 episode_rewards[i] += rewards[i]
                 
             episode_step += 1
