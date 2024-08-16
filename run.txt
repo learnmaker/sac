@@ -1,0 +1,6 @@
+原论文模型
+python main.py --exp-case case3 --eval --cuda
+原论文模型 + 计算卸载
+python main.py --exp-case case5 --eval --cuda
+原论文模型 + 计算卸载 + LSTM
+python main.py --exp-case case5 --eval --lstm --cuda

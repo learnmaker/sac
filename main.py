@@ -67,9 +67,16 @@ def get_state_sequence(i, state_dim):
         state_sequence_new = padding + state_sequence[i]
     else:
         state_sequence_new = state_sequence[i]
-    
-    return  state_sequence_new   
-        
+    state_sequence_new = torch.FloatTensor(state_sequence_new)
+    return  state_sequence_new
+
+def get_state_comb(state, server_requests, servers_cache_states):
+    state = torch.FloatTensor(state)
+    server_requests = torch.FloatTensor(server_requests)
+    servers_cache_states = torch.FloatTensor(servers_cache_states)
+    state_comb = torch.cat((state, server_requests, servers_cache_states.view(-1)), dim=0)
+    return state_comb
+
 data_directory = "runs/data"
 filename1 = "update_parameters.csv"
 data1 = []
@@ -94,11 +101,11 @@ if __name__ == '__main__':
     parser.add_argument('--policy', default="Gaussian",
                         help='策略类型: Gaussian(正态) | Deterministic(确定) (default: Gaussian)')
     # 是否使用LSTM
-    parser.add_argument('--lstm', type=bool, default=True,
-                        help='是否使用LSTM (default: True)')
+    parser.add_argument('--lstm', action='store_true', default=False,
+                        help='是否使用LSTM (default: False)')
     # 每10次评估一次策略
-    parser.add_argument('--eval', type=bool, default=True,
-                        help='每 10 episode评估一次策略 (default: True)')
+    parser.add_argument('--eval', action='store_true', default=False,
+                        help='每 10 episode评估一次策略 (default: False)')
     # 折现因子
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                         help='reward折现因子 (default: 0.99)')
@@ -112,7 +119,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                         help='温度系数 (default: 0.2)')
     # 熵前面的系数是否自动调整
-    parser.add_argument('--automatic_entropy_tuning', type=bool, default=True, metavar='G',
+    parser.add_argument('--no_automatic_entropy_tuning', action='store_false', default=True,
                         help='α是否自动调整 (default: True)')
     # 随机种子
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
@@ -120,9 +127,9 @@ if __name__ == '__main__':
     # 批量大小
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='批量大小 (default: 256)')
-    # 最大训练步数
-    parser.add_argument('--num_steps', type=int, default=5000001, metavar='N',
-                        help='最大训练步数 (default: 5000001)')
+    # 最大迭代次数
+    parser.add_argument('--max_episode', type=int, default=500, metavar='N',
+                        help='最大迭代次数 (default: 500)')
     # 隐藏层大小
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='隐藏层大小 (default: 256)')
@@ -139,13 +146,13 @@ if __name__ == '__main__':
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
                         help='经验缓冲区大小 (default: 10000000)')
     # 是否使用cuda
-    parser.add_argument('--cuda', action="store_true", default=True,
-                        help='是否使用CUDA (default: True)')
+    parser.add_argument('--cuda', action="store_true", default=False,
+                        help='是否使用CUDA (default: False)')
     # 服务器个数
-    parser.add_argument('--server_num', type=int, default=2,
+    parser.add_argument('--server_num', type=int, default=2, metavar='N',
                         help='服务器个数 (default: 2)')
     # 每个服务器的用户设备个数
-    parser.add_argument('--ud_num', type=int, default=3,
+    parser.add_argument('--ud_num', type=int, default=3, metavar='N',
                         help='每个服务器的用户设备个数 (default: 3)')
     args = parser.parse_args()
 
@@ -155,7 +162,7 @@ if __name__ == '__main__':
     agent_num = args.server_num * args.ud_num
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
-
+    
     # 设置表头
     set_fieldnames(agent_num)
     
@@ -175,14 +182,14 @@ if __name__ == '__main__':
 
     # Tensorboard保存实验数据
     writer = SummaryWriter(
-        'runs/{}_SAC_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy, "autotune" if args.automatic_entropy_tuning else ""))
-    filename1 = '{}_SAC_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy, "autotune" if args.automatic_entropy_tuning else "") + filename1
-    filename2 = '{}_SAC_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy, "autotune" if args.automatic_entropy_tuning else "") + filename2
-    filename3 = '{}_SAC_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy, "autotune" if args.automatic_entropy_tuning else "") + filename3
+        'runs/{}_SAC_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy))
+    filename1 = '{}_SAC_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy) + filename1
+    filename2 = '{}_SAC_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy) + filename2
+    filename3 = '{}_SAC_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
+                                      args.policy) + filename3
     snrs=[]
     Ats=[]
     agents = []
@@ -229,11 +236,14 @@ if __name__ == '__main__':
         states = env.reset()
         server_requests = env.get_requests()
         servers_cache_states = env.get_cach_state()
-        h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
-        for i in range(agent_num):
-            state = states[i]
-            add_state(i, state, server_requests, servers_cache_states)
-
+        print("回合",i_episode,"开始训练")
+        
+        if args.lstm:
+            h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+            for i in range(agent_num):
+                state = states[i]
+                add_state(i, state, server_requests, servers_cache_states)
+            
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
             
@@ -253,9 +263,12 @@ if __name__ == '__main__':
                 if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
-                    state_seq = get_state_sequence(index, state_dim)
-                    action, h_cs[index] = agent.select_action(state_seq, h_cs[index])
-                    
+                    if args.lstm:
+                        state_seq = get_state_sequence(index, state_dim)
+                        action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
+                    else:
+                        state_comb = get_state_comb(state, server_requests, servers_cache_states)
+                        action = agent.select_action(state_comb)
                  
                 server_index, ud_index = index2ud(index, args.ud_num)
                 actions.append(action)
@@ -269,7 +282,7 @@ if __name__ == '__main__':
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
-                            memories[index], args.batch_size, updates)
+                            memories[index], args.batch_size, updates, args.lstm)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
@@ -289,26 +302,33 @@ if __name__ == '__main__':
                     data1.append(temp_data1)   
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-            server_requests = env.get_requests()
-            servers_cache_states = env.get_cach_state()
+            
             for i in range(agent_num):
-                state_seq = get_state_sequence(i, state_dim)
-                add_state(i, next_states[i], server_requests, servers_cache_states)
-                next_state_seq = get_state_sequence(i, state_dim)
-
-                memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
+                if args.lstm:
+                    state_seq = get_state_sequence(i, state_dim)
+                    server_requests = env.get_requests()
+                    servers_cache_states = env.get_cach_state()
+                    add_state(i, next_states[i], server_requests, servers_cache_states)
+                    next_state_seq = get_state_sequence(i, state_dim)
+                    memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
+                else:
+                    state_comb = get_state_comb(state, server_requests, servers_cache_states)
+                    server_requests = env.get_requests()
+                    servers_cache_states = env.get_cach_state()
+                    next_state_comb = get_state_comb(next_states[i], server_requests, servers_cache_states)
+                    memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
+                    
                 episode_rewards[i] += rewards[i]
                 
             episode_step += 1
-            
             states = next_states
             dones = new_dones
-            
+            print("当前step",episode_step)
             total_numsteps += 1
              
-        if total_numsteps > args.num_steps:
+        if i_episode > args.max_episode:
             break
-
+        
         print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 总回报：{}, 最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
         temp_data2 = []
         for index in range(agent_num):

@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
@@ -14,7 +15,7 @@ class SAC(object):
         self.alpha = args.alpha # 控制策略熵的权重，用于平衡探索和利用
         self.actor_type = args.policy # 策略类型
         self.target_update_interval = args.target_update_interval # 更新目标网络频率
-        self.automatic_entropy_tuning = args.automatic_entropy_tuning # 是否自动调整熵的权重
+        self.automatic_entropy_tuning = not args.no_automatic_entropy_tuning # 是否自动调整熵的权重
         self.LSTM = args.lstm
         self.hidden_dim = args.hidden_size
         self.device = torch.device("cuda" if args.cuda else "cpu")
@@ -26,12 +27,14 @@ class SAC(object):
             
             self.critic_target = LSTMCritic(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
             hard_update(self.critic_target, self.critic)
+            print("critic使用LSTMCritic网络")
         else:
             self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device) # 主Q网络，用于评估状态-动作对的价值
             self.critic_optim = Adam(self.critic.parameters(), lr=args.lr) # Q网络的优化器，使用Adam优化算法
             
             self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device) # 目标Q网络，用于稳定学习过程，减少训练波动
             hard_update(self.critic_target, self.critic) # 初始时，目标网络的权重被硬拷贝（完全复制）自主网络的权重
+            print("critic使用QNetwork网络")
 
         # actor网络
         if self.actor_type == "Gaussian":
@@ -40,6 +43,7 @@ class SAC(object):
                 self.target_entropy = -torch.prod(torch.Tensor(action_space.shape).to(self.device)).item() # 所有元素的乘积
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
+                
             # 策略网络（actor）state-->action
             if self.LSTM:
                 self.actor = LSTMActorGaussian(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
@@ -47,16 +51,19 @@ class SAC(object):
                 
                 self.actor_target = LSTMActorGaussian(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
+                print("critic使用LSTMActorGaussian网络")
             else:
                 self.actor = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
                 
                 self.actor_target = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
+                print("critic使用GaussianPolicy网络")
 
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
+            
             # 策略网络
             if self.LSTM:
                 self.actor = LSTMActorDeterministic(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
@@ -64,23 +71,25 @@ class SAC(object):
                 
                 self.actor_target = LSTMActorDeterministic(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
+                print("critic使用LSTMActorDeterministic网络")
             else:
                 self.actor = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
                 
                 self.actor_target = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
+                print("critic使用DeterministicPolicy网络")
 
-    def select_action(self, state_sequence, h_c, evaluate=False):
-        tensor_state_sequence = torch.FloatTensor(state_sequence)
-        
-        if evaluate is False:
-            action, _, _, h_c = self.actor.sample(tensor_state_sequence.unsqueeze(0), h_c)
-        else:
-            _, _, action = self.sample(tensor_state_sequence.unsqueeze(0), h_c)
+    def select_action_lstm(self, state_sequence, h_c):
+        state_sequence.to(self.device)
+        action, _, _, h_c = self.actor.sample(state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
-
-    def update_parameters(self, memory, batch_size, updates):
+    
+    def select_action(self, state_comb):
+        action, _, _ = self.actor.sample(state_comb)
+        return action.detach().cpu().numpy()
+    
+    def update_parameters(self, memory, batch_size, updates, lstm):
         # 状态、动作、奖励、下一状态、是否结束
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
@@ -92,11 +101,15 @@ class SAC(object):
         
         # 计算next_q_value
         with torch.no_grad():
-            new_h_c = self.actor_target.init_hidden(self.hidden_dim, self.device)
-            action_target, log_pi_target, _, _ = self.actor_target.sample(state_batch, new_h_c)
-            qf1_target, qf2_target = self.critic_target(state_batch, action_target)
+            if lstm:
+                next_action_target, log_pi_target, _, _ = self.actor_target.sample(next_state_batch)
+            else:
+                next_action_target, log_pi_target, _ = self.actor_target.sample(next_state_batch)
+                
+            qf1_target, qf2_target = self.critic_target(next_state_batch, next_action_target)
             min_qf_target = torch.min(qf1_target, qf2_target) - self.alpha * log_pi_target
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_target)
+        
         
         # 更新critic
         qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
@@ -109,7 +122,10 @@ class SAC(object):
         self.critic_optim.step()
 
         # 更新actor
-        pi, log_pi, _, _ = self.actor.sample(state_batch)
+        if lstm:
+            pi, log_pi, _, _ = self.actor.sample(state_batch)
+        else:
+            pi, log_pi, _ = self.actor.sample(state_batch)
         qf1_pi, qf2_pi = self.critic(state_batch, pi)
         min_qf_pi = torch.min(qf1_pi, qf2_pi)
         actor_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]

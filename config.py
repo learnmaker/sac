@@ -17,13 +17,13 @@ system_config = {
 def find_best_reactive_fD():
     from tool.data_loader import load_data
     if system_config['F'] == 4:
-        task_utils = load_data('./data/task4_utils.csv')
+        task_utils = load_data('./mydata/task_info/task4_utils.csv')
     elif system_config['F'] == 6:
-        task_utils = load_data('./data/task6_utils.csv')
+        task_utils = load_data('./mydata/task_info/task6_utils.csv')
     elif system_config['F'] == 8:
-        task_utils = load_data('./data/task8_utils.csv')
+        task_utils = load_data('./mydata/task_info/task8_utils.csv')
     elif system_config['F'] == 10:
-        task_utils = load_data('./data/task10_utils.csv')
+        task_utils = load_data('./mydata/task_info/task10_utils.csv')
     task_set = task_utils.tolist()
     tau = chip_config['tau']
     fD = chip_config['fD']
@@ -36,7 +36,7 @@ def find_best_reactive_fD():
         w_At = task_set[A_t][2]
         min_val = 1e10
         best_fD = 0
-        for C_R_At in range(1, system_config['F'] + 1):
+        for C_R_At in range(1, system_config['M'] + 1):
             B_R = I_At / (tau - I_At * w_At / (C_R_At * fD))
             E_R = u * (C_R_At * fD) ** 2 * I_At * w_At
             if B_R + E_R <= min_val:
