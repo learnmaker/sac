@@ -166,6 +166,7 @@ class MultiAgentEnv(object):
         dones = np.full(self.agent_num, False)
         new_actions=[]
         new_valid = True
+        # print("actions",actions)
         for index in range(self.agent_num):
             self.last_use[index][int(self.sys_states[index][-1])] = (self.current_step - 1) # 记录资源的最后一次使用时间
             self.popularity[index][int(self.sys_states[index][-1])] += 1 #记录资源的使用频率
@@ -175,7 +176,7 @@ class MultiAgentEnv(object):
             if valid == False:
                 new_valid = False
             new_actions.append(action)
-
+ 
         # 计算传输消耗和计算消耗
         observation_, observe_details, details2, prize = self.calc_observation(new_actions)
         for i in range(self.agent_num):

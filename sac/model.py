@@ -138,10 +138,14 @@ class GaussianPolicy(nn.Module):
         x_t = normal.rsample()  # 使用重参数化技巧从正态分布中采样，以确保梯度可以通过采样过程 (mean + std * N(0,1))
         y_t = torch.tanh(x_t) # 将其范围约束在[-1, 1]之间
         action = y_t * self.action_scale + self.action_bias
+        
         log_prob = normal.log_prob(x_t)
         # 因为使用了 tanh 函数，所以需要修正日志概率，以反映动作被限制在实际动作空间边界内的事实
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
-        log_prob = log_prob.sum(1, keepdim=True)
+        if state.dim()==2:
+            log_prob = log_prob.sum(1, keepdim=True)
+        else:
+            log_prob = log_prob.sum(0, keepdim=True)
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
         return action, log_prob, mean
 

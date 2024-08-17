@@ -137,7 +137,7 @@ if __name__ == '__main__':
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                         help='每次更新参数采样多少次 (default: 1)')
     # 使用策略网络决策动作前，多少次随机采样
-    parser.add_argument('--start_steps', type=int, default=10000, metavar='N',
+    parser.add_argument('--start_steps', type=int, default=100, metavar='N',
                         help='随机采样次数 (default: 10000)')
     # 目标网络的更新周期
     parser.add_argument('--target_update_interval', type=int, default=1000, metavar='N',
@@ -236,7 +236,7 @@ if __name__ == '__main__':
         states = env.reset()
         server_requests = env.get_requests()
         servers_cache_states = env.get_cach_state()
-        print("回合",i_episode,"开始训练")
+        # print("回合",i_episode,"开始训练")
         
         if args.lstm:
             h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
@@ -272,6 +272,7 @@ if __name__ == '__main__':
                  
                 server_index, ud_index = index2ud(index, args.ud_num)
                 actions.append(action)
+                # print("action",action)
                 
                 mask = 1 if episode_step == env._max_episode_steps else float(not done)
                 masks.append(mask)
@@ -323,7 +324,7 @@ if __name__ == '__main__':
             episode_step += 1
             states = next_states
             dones = new_dones
-            print("当前step",episode_step)
+            # print("当前step",episode_step)
             total_numsteps += 1
              
         if i_episode > args.max_episode:

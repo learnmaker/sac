@@ -81,11 +81,12 @@ class SAC(object):
                 print("critic使用DeterministicPolicy网络")
 
     def select_action_lstm(self, state_sequence, h_c):
-        state_sequence.to(self.device)
+        state_sequence = state_sequence.to(self.device)
         action, _, _, h_c = self.actor.sample(state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
     def select_action(self, state_comb):
+        state_comb = state_comb.to(self.device)
         action, _, _ = self.actor.sample(state_comb)
         return action.detach().cpu().numpy()
     
@@ -105,7 +106,7 @@ class SAC(object):
                 next_action_target, log_pi_target, _, _ = self.actor_target.sample(next_state_batch)
             else:
                 next_action_target, log_pi_target, _ = self.actor_target.sample(next_state_batch)
-                
+
             qf1_target, qf2_target = self.critic_target(next_state_batch, next_action_target)
             min_qf_target = torch.min(qf1_target, qf2_target) - self.alpha * log_pi_target
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_target)
