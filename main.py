@@ -100,12 +100,15 @@ if __name__ == '__main__':
     # 策略类型
     parser.add_argument('--policy', default="Gaussian",
                         help='策略类型: Gaussian(正态) | Deterministic(确定) (default: Gaussian)')
+    # 是否引入全局信息
+    parser.add_argument('--global-info', action='store_true', default=False,
+                        help='是否引入全局信息 (default: False)')
     # 是否使用LSTM
     parser.add_argument('--lstm', action='store_true', default=False,
                         help='是否使用LSTM (default: False)')
     # 每10次评估一次策略
     parser.add_argument('--eval', action='store_true', default=False,
-                        help='每 10 episode评估一次策略 (default: False)')
+                        help='是否评估 (default: False)')
     # 折现因子
     parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                         help='reward折现因子 (default: 0.99)')
@@ -137,7 +140,7 @@ if __name__ == '__main__':
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                         help='每次更新参数采样多少次 (default: 1)')
     # 使用策略网络决策动作前，多少次随机采样
-    parser.add_argument('--start_steps', type=int, default=100, metavar='N',
+    parser.add_argument('--start_steps', type=int, default=0, metavar='N',
                         help='随机采样次数 (default: 10000)')
     # 目标网络的更新周期
     parser.add_argument('--target_update_interval', type=int, default=1000, metavar='N',
@@ -166,15 +169,17 @@ if __name__ == '__main__':
     # 设置表头
     set_fieldnames(agent_num)
     
-    # 保存所有用户设备的任务请求，agent_num，初始化为-1
-    server_requests = np.full(agent_num, -1)
-
-    # 保存所有用户设备的缓存状态，agent_num * task_num * 2，初始化为0
     task_num = system_config['F']  # 任务数 8
     maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
-    servers_cache_states = np.full((agent_num, task_num, 2), 0)
+    
+    if args.global_info:
+        # 保存所有用户设备的任务请求，agent_num，初始化为-1
+        server_requests = np.full(agent_num, -1)
+
+        # 保存所有用户设备的缓存状态，agent_num * task_num * 2，初始化为0
+        servers_cache_states = np.full((agent_num, task_num, 2), 0)
 
     # 跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
     generate_snrs(args.server_num)  # 生成信噪比，每个服务器下的信噪比相同
@@ -198,7 +203,10 @@ if __name__ == '__main__':
     sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
     sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
-    state_dim = 2*task_num+1 + server_requests.size + servers_cache_states.size
+    if args.global_info:
+        state_dim = 2*task_num+1 + server_requests.size + servers_cache_states.size
+    else:
+        state_dim = 2*task_num+1
     
     for server in range(args.server_num):
         # 该服务器的信噪比
@@ -234,8 +242,9 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
-        server_requests = env.get_requests()
-        servers_cache_states = env.get_cach_state()
+        if args.global_info:
+            server_requests = env.get_requests()
+            servers_cache_states = env.get_cach_state()
         # print("回合",i_episode,"开始训练")
         
         if args.lstm:
@@ -267,12 +276,14 @@ if __name__ == '__main__':
                         state_seq = get_state_sequence(index, state_dim)
                         action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                     else:
-                        state_comb = get_state_comb(state, server_requests, servers_cache_states)
-                        action = agent.select_action(state_comb)
+                        if args.global_info:
+                            state_comb = get_state_comb(state, server_requests, servers_cache_states)
+                            action = agent.select_action(state_comb)
+                        else:
+                            action = agent.select_action(state)
                  
                 server_index, ud_index = index2ud(index, args.ud_num)
                 actions.append(action)
-                # print("action",action)
                 
                 mask = 1 if episode_step == env._max_episode_steps else float(not done)
                 masks.append(mask)
@@ -313,11 +324,14 @@ if __name__ == '__main__':
                     next_state_seq = get_state_sequence(i, state_dim)
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
-                    state_comb = get_state_comb(state, server_requests, servers_cache_states)
-                    server_requests = env.get_requests()
-                    servers_cache_states = env.get_cach_state()
-                    next_state_comb = get_state_comb(next_states[i], server_requests, servers_cache_states)
-                    memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
+                    if args.global_info:
+                        state_comb = get_state_comb(states[i], server_requests, servers_cache_states)
+                        server_requests = env.get_requests()
+                        servers_cache_states = env.get_cach_state()
+                        next_state_comb = get_state_comb(next_states[i], server_requests, servers_cache_states)
+                        memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
+                    else:
+                        memories[i].push(states[i], actions[i], rewards[i], next_states[i], masks[i])
                     
                 episode_rewards[i] += rewards[i]
                 
@@ -330,7 +344,7 @@ if __name__ == '__main__':
         if i_episode > args.max_episode:
             break
         
-        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 总回报：{}, 最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 单agent回报: {}, 总回报：{}, 最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)/agent_num, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
         temp_data2 = []
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
@@ -341,7 +355,7 @@ if __name__ == '__main__':
         data2.append(temp_data2)
 
         # 评估
-        eval_freq = 10  # 评估频率
+        eval_freq = 2  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
             
             avg_reward = 0
@@ -356,9 +370,15 @@ if __name__ == '__main__':
                 compute_cost = 0
                 states = env.reset()
                 dones = np.full(agent_num, False)
-                server_requests = env.get_requests()
-                ervers_cache_states = env.get_cach_state()
-                
+                if args.global_info:
+                    server_requests = env.get_requests()
+                    ervers_cache_states = env.get_cach_state()
+                if args.lstm:
+                    h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+                    for i in range(agent_num):
+                        state = states[i]
+                        add_state(i, state, server_requests, servers_cache_states)
+                        
                 while np.sum(dones == False) > 0:
                     
                     actions=[]
@@ -371,15 +391,26 @@ if __name__ == '__main__':
                         
                         agent = agents[index]
                         state = states[index]
-                        
-                        action = agent.select_action(state, server_requests, servers_cache_states)
+                        if args.lstm:
+                            state_seq = get_state_sequence(index, state_dim)
+                            action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
+                        else:
+                            if args.global_info:
+                                state_comb = get_state_comb(state, server_requests, servers_cache_states)
+                                action = agent.select_action(state_comb)
+                            else:
+                                action = agent.select_action(state)
                         actions.append(action)
                         
                     next_states, rewards, new_dones, infos = env.step(actions)
                     # 执行动作后，立刻更新任务缓存
-                    server_requests = env.get_requests()
-                    ervers_cache_states = env.get_cach_state()
-                    
+                    if args.global_info:
+                        server_requests = env.get_requests()
+                        ervers_cache_states = env.get_cach_state()
+                    if args.lstm:
+                        for i in range(agent_num):
+                            add_state(i, next_states[i], server_requests, servers_cache_states)
+                            
                     episode_reward += np.sum(rewards)
                         
                     try:

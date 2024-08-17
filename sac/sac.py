@@ -17,6 +17,7 @@ class SAC(object):
         self.target_update_interval = args.target_update_interval # 更新目标网络频率
         self.automatic_entropy_tuning = not args.no_automatic_entropy_tuning # 是否自动调整熵的权重
         self.LSTM = args.lstm
+        self.global_info = args.global_info
         self.hidden_dim = args.hidden_size
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -85,9 +86,13 @@ class SAC(object):
         action, _, _, h_c = self.actor.sample(state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
-    def select_action(self, state_comb):
-        state_comb = state_comb.to(self.device)
-        action, _, _ = self.actor.sample(state_comb)
+    def select_action(self, state):
+        if self.global_info:
+            state_comb = state.to(self.device)
+            action, _, _ = self.actor.sample(state_comb)
+        else:
+            state = torch.FloatTensor(state).to(self.device)
+            action, _, _ = self.actor.sample(state)
         return action.detach().cpu().numpy()
     
     def update_parameters(self, memory, batch_size, updates, lstm):

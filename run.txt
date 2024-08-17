@@ -1,6 +1,8 @@
 原论文模型
 python main.py --exp-case case3 --eval --cuda
+原论文模型（全局信息）
+python main.py --exp-case case3 --eval --global-info --cuda
 原论文模型 + 计算卸载
-python main.py --exp-case case5 --eval --cuda
+python main.py --exp-case case5 --eval --global-info --cuda
 原论文模型 + 计算卸载 + LSTM
-python main.py --exp-case case5 --eval --lstm --cuda
+python main.py --exp-case case5 --eval --global-info --lstm --cuda
