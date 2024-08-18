@@ -1,4 +1,4 @@
 runs/
-envs/__pycache__
-__pycache__
+envs/__pycache__/
+__pycache__/
 *.pyc
