@@ -140,7 +140,7 @@ if __name__ == '__main__':
     parser.add_argument('--updates_per_step', type=int, default=1, metavar='N',
                         help='每次更新参数采样多少次 (default: 1)')
     # 使用策略网络决策动作前，多少次随机采样
-    parser.add_argument('--start_steps', type=int, default=0, metavar='N',
+    parser.add_argument('--start_steps', type=int, default=1000, metavar='N',
                         help='随机采样次数 (default: 10000)')
     # 目标网络的更新周期
     parser.add_argument('--target_update_interval', type=int, default=1000, metavar='N',
@@ -373,7 +373,7 @@ if __name__ == '__main__':
         data2.append(temp_data2)
 
         # 评估
-        eval_freq = 2  # 评估频率
+        eval_freq = 10  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
             
             avg_reward = 0
