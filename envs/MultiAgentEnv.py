@@ -132,9 +132,15 @@ class MultiAgentEnv(object):
     def get_last_use(self):
         return self.last_use
     
-    def show_action(self, action, task_num):
-        print("计算核数: {}, 主动传输：{}, dSI_f: {}, dSO_f: {}, 卸载对象: {}".format(action[0], action[1:task_num+1], action[task_num+1:task_num*2+1], action[task_num*2+1:task_num*3+1], action[-1]))
-        
+    def show_action(self, action):
+        print("计算核数: {}, 主动传输：{}, dSI_f: {}, dSO_f: {}, 卸载对象: {}".format(action[0], action[1:num_task+1], action[num_task+1:num_task*2+1], action[num_task*2+1:num_task*3+1], action[-1]))
+    
+    def show_detail2(self, detail2):
+        print("被动传输消耗, 主动传输消耗, 被动计算消耗, 主动计算消耗")
+        detail2 = np.column_stack(detail2)
+        for i in range(self.agent_num):
+            print("agent",i,detail2[i])
+            
     def step(self, actions):
         """
         Parameters
@@ -173,16 +179,23 @@ class MultiAgentEnv(object):
             self.last_use[index][int(self.sys_states[index][-1])] = (self.current_step - 1) # 记录资源的最后一次使用时间
             self.popularity[index][int(self.sys_states[index][-1])] += 1 #记录资源的使用频率
             action = actions[index]
+            # print("agent", index)
             action, prob_action = self.sample2action(action)
             valid, action = self.check_action_validity(index, action, prob_action)
-            # self.show_action(action, num_task)
+            # self.show_action(action)
             if valid == False:
                 new_valid = False
             new_actions.append(action)
         
         # 计算传输消耗和计算消耗
-        observation, observe_details, details2, prize = self.calc_observation(new_actions)
-
+        if self.offload:
+            observation, observe_details, details2, prize = self.calc_observation_offload(new_actions)
+        else:
+            observation, observe_details, details2 = self.calc_observation(new_actions)
+        # print("new_valid",new_valid)
+        # print("observation",observation)
+        # self.show_detail2(details2)
+        # print("prize",prize)
         for i in range(self.agent_num):
             if self.current_step > MAX_STEPS:
                 dones[i] = True
@@ -191,7 +204,10 @@ class MultiAgentEnv(object):
         self.sys_states = obs    # 更新系统状态
 
         # reward_ = - observation_ ** 2 / 1e12
-        rewards = -(observation - prize) / 1e6 
+        if self.offload:
+            rewards = -(observation - prize) / 1e6
+        else:
+            rewards = - observation / 1e6
         actions = self.action2sample(new_actions)
 
         return self.scale_state(self.sys_states), rewards, dones, {'observe_details': observe_details, 'actions': actions}
@@ -221,8 +237,46 @@ class MultiAgentEnv(object):
     def system_state(self):
         return self.sys_states.copy()
     
-    # 计算传输消耗和计算消耗
     def calc_observation(self, actions):
+        total_B_R=np.full(self.agent_num, 0.)
+        total_B_P=np.full(self.agent_num, 0.)
+        total_E_R=np.full(self.agent_num, 0.)
+        total_E_P=np.full(self.agent_num, 0.)
+        
+        for agent_i in range(self.agent_num):
+            A_t = int(self.sys_states[agent_i][-1])
+            snr_t = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
+            I_At = self.task_set[A_t][0]
+            w_At = self.task_set[A_t][2]
+            S_I_At = self.sys_states[agent_i][A_t]
+            S_O_At = self.sys_states[agent_i][num_task + A_t]
+            C_R_At = actions[agent_i][0]
+
+            if S_I_At == 1 or S_O_At == 1:
+                B_R = 0
+            else:
+                B_R = (1 - S_I_At) * (1 - S_O_At) * I_At / ((tau - I_At * w_At / (C_R_At * fD)) * math.log2(1 + snr_t))
+            E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
+
+            total_B_R[agent_i] = B_R
+            total_E_R[agent_i] = E_R
+            if self.reactive_only:
+                continue
+
+            E_P = 0
+            B_P = 0
+            for idx in range(num_task):
+                C_P = 0
+                E_P += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
+                B_P += self.task_set[idx][0] * actions[agent_i][1 + idx] / (tau * math.log2(1 + snr_t))
+            
+            total_E_P[agent_i] = E_P
+            total_B_P[agent_i] = B_P
+            
+        return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P]
+    
+    # 计算传输消耗和计算消耗
+    def calc_observation_offload(self, actions):
         """
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks), O_u, O_m]
         # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
@@ -279,6 +333,7 @@ class MultiAgentEnv(object):
                         local = False
                     if flag:
                         total_I[offload_agent] += 999999
+                        # print("无法得到卸载反馈结果，+999999")
                         continue
                     
                     E_R=0
@@ -302,6 +357,7 @@ class MultiAgentEnv(object):
                         # 如果计算时间大于最大容许延迟
                         if C_time[agent_i] >= tau:
                             total_I[offload_agent] += 999999
+                            # print("计算时间大于最大容许延迟, +999999")
                             C_time[agent_i] -= I_At * w_At / (C_R_At * fD)
                             flag = True
                             continue
@@ -311,6 +367,7 @@ class MultiAgentEnv(object):
                         # 如果没有输入数据，需要从服务器下载数据
                         if S_I_At == 0 and  offload_A_t != local_At:
                             total_I[agent_i] += I_At
+                            # print("从服务器下载数据, +",I_At)
                             B_R += I_At
                             
                     # 最后，如果是卸载任务，需要回传
@@ -318,6 +375,7 @@ class MultiAgentEnv(object):
                         total_I[agent_i] += O_At
                         B_R += O_At
                         total_I[offload_agent] += O_At
+                        # print("计算结果回传, +",O_At)
                         prize_E[agent_i]+=E_R
                         prize_B[agent_i]+=B_R
                     else:

@@ -187,14 +187,30 @@ if __name__ == '__main__':
 
     # Tensorboard保存实验数据
     writer = SummaryWriter(
-        'runs/{}_SAC_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy))
-    filename1 = '{}_SAC_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy) + filename1
-    filename2 = '{}_SAC_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy) + filename2
-    filename3 = '{}_SAC_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), args.exp_case,
-                                      args.policy) + filename3
+        'runs/{}_SAC_{}_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
+                                   args.exp_case, 
+                                   "global-info" if args.global_info else "",
+                                   "offload" if args.exp_case == "case5" else "",
+                                   "lstm" if args.lstm else "",
+                                   ))
+    filename1 = '{}_SAC_{}_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
+                                   args.exp_case, 
+                                   "global-info" if args.global_info else "",
+                                   "offload" if args.exp_case == "case5" else "",
+                                   "lstm" if args.lstm else "",
+                                   ) + filename1
+    filename2 = '{}_SAC_{}_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
+                                   args.exp_case, 
+                                   "global-info" if args.global_info else "",
+                                   "offload" if args.exp_case == "case5" else "",
+                                   "lstm" if args.lstm else "",
+                                   ) + filename2
+    filename3 = '{}_SAC_{}_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
+                                   args.exp_case, 
+                                   "global-info" if args.global_info else "",
+                                   "offload" if args.exp_case == "case5" else "",
+                                   "lstm" if args.lstm else "",
+                                   ) + filename3
     snrs=[]
     Ats=[]
     agents = []
@@ -314,7 +330,9 @@ if __name__ == '__main__':
                     data1.append(temp_data1)   
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-            
+            # print("当前step",episode_step)
+            # print("rewards",rewards)
+            # print("-------------------------------------")
             for i in range(agent_num):
                 if args.lstm:
                     state_seq = get_state_sequence(i, state_dim)
@@ -338,9 +356,9 @@ if __name__ == '__main__':
             episode_step += 1
             states = next_states
             dones = new_dones
-            # print("当前step",episode_step)
+            
             total_numsteps += 1
-             
+           
         if i_episode > args.max_episode:
             break
         
