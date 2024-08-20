@@ -35,13 +35,16 @@ def set_fieldnames(agent_num):
     fd3=['avg_reward/test_episode', 'avg_cost/trans_cost', 'avg_cost/comp_cost']
     for index in range(agent_num):
         server_index, ud_index = index2ud(index, args.ud_num)
+        
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_1')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/critic_2')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/policy')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/entropy_loss')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'entropy_temprature/alpha')
+        
         fd2.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train')
     fd2.append("total_reward")
+    
     data1.append(fd1)
     data2.append(fd2)
     data3.append(fd3)
@@ -77,7 +80,7 @@ def get_state_comb(state, server_requests, servers_cache_states):
     state_comb = torch.cat((state, server_requests, servers_cache_states.view(-1)), dim=0)
     return state_comb
 
-data_directory = "runs/data"
+data_directory = "runs/"
 filename1 = "update_parameters.csv"
 data1 = []
 filename2 = "episode_rewards.csv"
@@ -186,31 +189,15 @@ if __name__ == '__main__':
     generate_request(args.server_num, args.ud_num, task_num, maxp)  # 生成任务请求
 
     # Tensorboard保存实验数据
-    writer = SummaryWriter(
-        'runs/{}_SAC_{}_{}_{}_{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
+    filename = '{}_SAC_{}{}{}{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
                                    args.exp_case, 
-                                   "global-info" if args.global_info else "",
-                                   "offload" if args.exp_case == "case5" else "",
-                                   "lstm" if args.lstm else "",
-                                   ))
-    filename1 = '{}_SAC_{}_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
-                                   args.exp_case, 
-                                   "global-info" if args.global_info else "",
-                                   "offload" if args.exp_case == "case5" else "",
-                                   "lstm" if args.lstm else "",
-                                   ) + filename1
-    filename2 = '{}_SAC_{}_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
-                                   args.exp_case, 
-                                   "global-info" if args.global_info else "",
-                                   "offload" if args.exp_case == "case5" else "",
-                                   "lstm" if args.lstm else "",
-                                   ) + filename2
-    filename3 = '{}_SAC_{}_{}_{}_{}_'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
-                                   args.exp_case, 
-                                   "global-info" if args.global_info else "",
-                                   "offload" if args.exp_case == "case5" else "",
-                                   "lstm" if args.lstm else "",
-                                   ) + filename3
+                                   "_global-info" if args.global_info else "",
+                                   "_offload" if args.exp_case == "case5" else "",
+                                   "_lstm" if args.lstm else "",
+                                   )
+    writer = SummaryWriter('runs/' + filename)
+    data_directory = data_directory + filename
+    
     snrs=[]
     Ats=[]
     agents = []
@@ -219,6 +206,7 @@ if __name__ == '__main__':
     sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
     sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
+    
     if args.global_info:
         state_dim = 2*task_num+1 + server_requests.size + servers_cache_states.size
     else:
@@ -274,6 +262,8 @@ if __name__ == '__main__':
             
             actions=[]
             masks=[]
+            temp_data1=[]
+            
             # 对每个agent进行训练
             for index in range(agent_num):
                 
@@ -305,7 +295,6 @@ if __name__ == '__main__':
                 masks.append(mask)
 
                 if len(memories[index]) > args.batch_size:
-                    temp_data1=[]
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
@@ -327,12 +316,11 @@ if __name__ == '__main__':
                         temp_data1.append(ent_loss)
                         temp_data1.append(alpha)
                         updates += 1
-                    data1.append(temp_data1)   
+            if not temp_data1:
+                data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
             # print("当前step",episode_step)
-            # print("rewards",rewards)
-            # print("-------------------------------------")
             for i in range(agent_num):
                 if args.lstm:
                     state_seq = get_state_sequence(i, state_dim)
@@ -362,7 +350,7 @@ if __name__ == '__main__':
         if i_episode > args.max_episode:
             break
         
-        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 单agent回报: {}, 总回报：{}, 最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)/agent_num, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
+        print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 平均回报: {}, 总回报：{}, 总回报最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)/agent_num, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
         temp_data2 = []
         for index in range(agent_num):
             server_index, ud_index = index2ud(index, args.ud_num)
@@ -471,10 +459,11 @@ if __name__ == '__main__':
             writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
             data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2)])
 
-        # 每回合结束写入一次数据
+        # -------------------------------------------------每回合结束写入一次数据-----------------------------------------------------
         file_path1=os.path.join(data_directory, filename1)
         file_path2=os.path.join(data_directory, filename2)
         file_path3=os.path.join(data_directory, filename3)
+        
         if i_episode==1:
             if not os.path.exists(data_directory):
                 os.makedirs(data_directory)

@@ -1,21 +1,29 @@
+import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 
 # 读取CSV文件
-data = pd.read_csv('data/samples4_maxp70.csv', header=None)
+# filename = input("文件名称：")
+filename = "2024-08-18_19-50-06_SAC_case3____"
+# data1 = pd.read_csv("D:/temp_data/data/"+ filename + "update_parameters.csv")
+data2 = pd.read_csv("D:/temp_data/data/"+ filename + "episode_rewards.csv")
+# data3 = pd.read_csv("D:/temp_data/data/"+ filename + "eval.csv")
 
-# 将数据转换为列表
-values = data.iloc[:100, 0].tolist()
+# 获取表头
+headers = data2.columns.tolist()
 
-# 创建x轴索引，假设数据点的顺序即为时间序列的顺序
-x = list(range(len(values)))
+# 遍历每列并绘制折线图
+for i in range(len(headers)-1):
+    x = list(range(data2.shape[0]))
+    y = data2.iloc[:, i].tolist()
+    
+    plt.plot(x, y, label=headers[i])
 
-# 绘制折线图
-plt.figure(figsize=(10, 5))
-plt.plot(x, values)
-plt.title('折线图')
-plt.xlabel('时间点')
-plt.ylabel('数值')
+# 添加标题、标签和图例
+plt.title('episode_rewards for agent')
+plt.xlabel('Time steps')
+plt.ylabel('Rewards')
+plt.legend()
 
 # 显示图形
 plt.show()
