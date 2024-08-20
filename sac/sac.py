@@ -52,14 +52,14 @@ class SAC(object):
                 
                 self.actor_target = LSTMActorGaussian(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
-                print("critic使用LSTMActorGaussian网络")
+                print("actor使用LSTMActorGaussian网络")
             else:
                 self.actor = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
                 
                 self.actor_target = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
-                print("critic使用GaussianPolicy网络")
+                print("actor使用GaussianPolicy网络")
 
         else:
             self.alpha = 0
@@ -72,14 +72,14 @@ class SAC(object):
                 
                 self.actor_target = LSTMActorDeterministic(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
-                print("critic使用LSTMActorDeterministic网络")
+                print("actor使用LSTMActorDeterministic网络")
             else:
                 self.actor = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
                 
                 self.actor_target = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
-                print("critic使用DeterministicPolicy网络")
+                print("actor使用DeterministicPolicy网络")
 
     def select_action_lstm(self, state_sequence, h_c):
         state_sequence = state_sequence.to(self.device)

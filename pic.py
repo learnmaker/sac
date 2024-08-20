@@ -1,23 +1,48 @@
 import sys
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+ 
+# 设置字体为中文字体
+matplotlib.rcParams['font.family'] = 'SimHei'
 
 # 读取CSV文件
 # filename = input("文件名称：")
-filename = "2024-08-18_19-50-06_SAC_case3____"
-# data1 = pd.read_csv("D:/temp_data/data/"+ filename + "update_parameters.csv")
-data2 = pd.read_csv("D:/temp_data/data/"+ filename + "episode_rewards.csv")
-# data3 = pd.read_csv("D:/temp_data/data/"+ filename + "eval.csv")
+filename = "2024-08-20_18-18-07_SAC_case3"
+data1 = pd.read_csv("runs/"+ filename + "/update_parameters.csv")
+data2 = pd.read_csv("runs/"+ filename + "/episode_rewards.csv")
+data3 = pd.read_csv("runs/"+ filename + "/eval.csv")
 
-# 获取表头
-headers = data2.columns.tolist()
+# data1
+headers1 = data1.columns.tolist()
+parameters = ["critic_1", "critic_2", "policy", "entropy_loss", "alpha"]
+for index,parameter in enumerate(parameters):
+    
+    for i in range(len(headers1)//5):
+        x = list(range(data1.shape[0]))
+        y = data1.iloc[:, index+i*5].tolist()
+        
+        plt.plot(x, y, label=headers1[index+i*5])
+        
+    # 添加标题、标签和图例
+    plt.title(parameter + ' for agent')
+    plt.xlabel('Number of updates')
+    plt.ylabel(parameter)
+    plt.legend()
+
+    plt.savefig("runs/"+ filename + "/" + parameter + '变化图.png')
+    plt.clf()  # 清除整个图表
+    
+    
+# data2
+headers2 = data2.columns.tolist()
 
 # 遍历每列并绘制折线图
-for i in range(len(headers)-1):
+for i in range(len(headers2)-1):
     x = list(range(data2.shape[0]))
     y = data2.iloc[:, i].tolist()
     
-    plt.plot(x, y, label=headers[i])
+    plt.plot(x, y, label=headers2[i])
 
 # 添加标题、标签和图例
 plt.title('episode_rewards for agent')
@@ -25,5 +50,32 @@ plt.xlabel('Time steps')
 plt.ylabel('Rewards')
 plt.legend()
 
-# 显示图形
-plt.show()
+plt.savefig("runs/"+ filename + "/" + '各agent的episode_rewards.png')
+plt.clf()  # 清除整个图表
+
+x = list(range(data2.shape[0]))
+y = data2.iloc[:, -1].tolist()
+plt.plot(x, y, label=headers2[-1])
+plt.title('系统总体reward')
+plt.xlabel('Time steps')
+plt.ylabel('total_reward')
+plt.legend()
+
+plt.savefig("runs/"+ filename + "/" + '系统总体reward.png')
+plt.clf()  # 清除整个图表
+
+# data3
+headers3 = data3.columns.tolist()
+items = ["test_episode", "trans_cost", "comp_cost"]
+for index, item in enumerate(items):
+    x = list(range(data3.shape[0]))
+    y = data3.iloc[:, index].tolist()
+    
+    plt.plot(x, y, label=headers3[index])
+    plt.title(item + ' for agent')
+    plt.xlabel('Time steps')
+    plt.ylabel(item)
+    plt.legend()
+
+    plt.savefig("runs/"+ filename + "/" + '评估结果{}.png'.format(item))
+    plt.clf()  # 清除整个图表

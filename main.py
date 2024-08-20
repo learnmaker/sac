@@ -12,7 +12,6 @@ from tool.generate_snrs import generate_snrs
 from tool.samples_from_transmat import generate_request
 from torch.utils.tensorboard import SummaryWriter
 from sac.replay_memory import ReplayMemory
-from envs.MultiTaskCore import MultiTaskCore
 from envs.MultiAgentEnv import MultiAgentEnv
 from tool.data_loader import load_data
 from config import system_config
@@ -136,7 +135,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='批量大小 (default: 256)')
     # 最大迭代次数
-    parser.add_argument('--max_episode', type=int, default=500, metavar='N',
+    parser.add_argument('--max_episode', type=int, default=300, metavar='N',
                         help='最大迭代次数 (default: 500)')
     # 隐藏层大小
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
@@ -318,7 +317,8 @@ if __name__ == '__main__':
                         temp_data1.append(ent_loss)
                         temp_data1.append(alpha)
                         updates += 1
-            if not temp_data1:
+            
+            if temp_data1:
                 data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
