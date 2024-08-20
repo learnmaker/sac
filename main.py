@@ -18,6 +18,8 @@ from tool.data_loader import load_data
 from config import system_config
 from gym import spaces
 
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+
 def index2ud(index, ud_num):
     server = index // ud_num
     ud = index - server * ud_num
