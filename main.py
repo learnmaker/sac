@@ -33,7 +33,7 @@ def find_max_digit_position(num):
 def set_fieldnames(agent_num):
     fd1=[]
     fd2=[]
-    fd3=['avg_reward/test_episode', 'avg_cost/trans_cost', 'avg_cost/comp_cost']
+    fd3=['avg_reward/test_episode', 'avg_cost/trans_cost', 'avg_cost/comp_cost', 'total_cost']
     for index in range(agent_num):
         server_index, ud_index = index2ud(index, args.ud_num)
         
@@ -136,7 +136,7 @@ if __name__ == '__main__':
                         help='批量大小 (default: 256)')
     # 最大迭代次数
     parser.add_argument('--max_episode', type=int, default=300, metavar='N',
-                        help='最大迭代次数 (default: 500)')
+                        help='最大迭代次数 (default: 300)')
     # 隐藏层大小
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='隐藏层大小 (default: 256)')
@@ -167,6 +167,7 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     agent_num = args.server_num * args.ud_num
+    weight = system_config['weight']
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
     
@@ -363,13 +364,13 @@ if __name__ == '__main__':
         data2.append(temp_data2)
 
         # 评估
-        eval_freq = 10  # 评估频率
+        eval_freq = 5  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
             
             avg_reward = 0
             avg_trans_cost = 0
             avg_compute_cost = 0
-            episodes = 10  # 取10次的平均值，计算网络的奖励
+            episodes = 5  # 取10次的平均值，计算网络的奖励
             done_step = 0
             
             for _ in range(episodes):
@@ -459,7 +460,7 @@ if __name__ == '__main__':
             print("----------------------------------------")
             writer.add_scalar('avg_cost/trans_cost', round(print_avg_trans, 2), i_episode)
             writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
-            data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2)])
+            data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2), round(print_avg_trans, 2) + weight*round(print_avg_comp, 2)])
 
         # -------------------------------------------------每回合结束写入一次数据-----------------------------------------------------
         file_path1=os.path.join(data_directory, filename1)

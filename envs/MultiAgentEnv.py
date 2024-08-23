@@ -23,7 +23,7 @@ num_task = system_config['F']
 Cache = chip_config['C']
 weight = system_config['weight'] 
 
-MAX_STEPS = 2000
+MAX_STEPS = 1000
 
 
 class MultiAgentEnv(object):

@@ -8,14 +8,14 @@ matplotlib.rcParams['font.family'] = 'SimHei'
 
 # 读取CSV文件
 # filename = input("文件名称：")
-filename = "2024-08-20_18-18-07_SAC_case3"
+filename = "2024-08-20_21-32-19_SAC_case3"
 data1 = pd.read_csv("runs/"+ filename + "/update_parameters.csv")
 data2 = pd.read_csv("runs/"+ filename + "/episode_rewards.csv")
 data3 = pd.read_csv("runs/"+ filename + "/eval.csv")
 
 # data1
 headers1 = data1.columns.tolist()
-parameters = ["critic_1", "critic_2", "policy", "entropy_loss", "alpha"]
+parameters = ["critic_1", "critic_2", "actor", "entropy_loss", "alpha"]
 for index,parameter in enumerate(parameters):
     
     for i in range(len(headers1)//5):

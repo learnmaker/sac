@@ -25,8 +25,8 @@ def generate_snrs(server_num):
         print("存在对应信噪比文件")
         return
     
-    sample_len = 1200000 * 4
-    snrs = [1, 3, 0.5, 2]
+    sample_len = 120000 * 4
+    snrs = [1, 1.5, 0.5, 2]
     # 每个服务器的信噪比变换是相同的
     for i in range(server_num):
         output = []
