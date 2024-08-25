@@ -2,13 +2,11 @@ import sys
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
- 
 # 设置字体为中文字体
-matplotlib.rcParams['font.family'] = 'SimHei'
+# matplotlib.rcParams['font.family'] = 'SimHei'
 
 # 读取CSV文件
-# filename = input("文件名称：")
-filename = "2024-08-20_21-32-19_SAC_case3"
+filename = input("文件名称：")
 data1 = pd.read_csv("runs/"+ filename + "/update_parameters.csv")
 data2 = pd.read_csv("runs/"+ filename + "/episode_rewards.csv")
 data3 = pd.read_csv("runs/"+ filename + "/eval.csv")
