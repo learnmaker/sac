@@ -71,8 +71,9 @@ def get_state_sequence(i, state_dim):
         state_sequence_new = padding + state_sequence[i]
     else:
         state_sequence_new = state_sequence[i]
-    state_sequence_new = torch.FloatTensor(state_sequence_new)
-    return  state_sequence_new
+    state_sequence_np = np.array(state_sequence_new)
+    state_sequence_tensor = torch.from_numpy(state_sequence_np).float()
+    return  state_sequence_tensor
 
 def get_state_comb(state, server_requests, servers_cache_states):
     state = torch.FloatTensor(state)

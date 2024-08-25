@@ -30,7 +30,7 @@ for index,parameter in enumerate(parameters):
     plt.ylabel(parameter)
     plt.legend()
 
-    plt.savefig("runs/"+ filename + "/" + parameter + '变化图.png')
+    plt.savefig("runs/"+ filename + "/pic/" + parameter + '变化图.png')
     plt.clf()  # 清除整个图表
     
     
@@ -50,7 +50,7 @@ plt.xlabel('Time steps')
 plt.ylabel('Rewards')
 plt.legend()
 
-plt.savefig("runs/"+ filename + "/" + '各agent的episode_rewards.png')
+plt.savefig("runs/"+ filename + "/pic/" + '各agent的episode_rewards.png')
 plt.clf()  # 清除整个图表
 
 x = list(range(data2.shape[0]))
@@ -61,7 +61,7 @@ plt.xlabel('Time steps')
 plt.ylabel('total_reward')
 plt.legend()
 
-plt.savefig("runs/"+ filename + "/" + '系统总体reward.png')
+plt.savefig("runs/"+ filename + "/pic/" + '系统总体reward.png')
 plt.clf()  # 清除整个图表
 
 # data3
@@ -77,5 +77,5 @@ for index, item in enumerate(items):
     plt.ylabel(item)
     plt.legend()
 
-    plt.savefig("runs/"+ filename + "/" + '评估结果{}.png'.format(item))
+    plt.savefig("runs/"+ filename + "/pic/" + '评估结果{}.png'.format(item))
     plt.clf()  # 清除整个图表
