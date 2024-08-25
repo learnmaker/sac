@@ -1,3 +1,4 @@
+import os
 import sys
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,9 +12,12 @@ data1 = pd.read_csv("runs/"+ filename + "/update_parameters.csv")
 data2 = pd.read_csv("runs/"+ filename + "/episode_rewards.csv")
 data3 = pd.read_csv("runs/"+ filename + "/eval.csv")
 
+if not os.path.exists("runs/"+ filename + "/pic/"):
+    os.makedirs("runs/"+ filename + "/pic/")
+
 # data1
 headers1 = data1.columns.tolist()
-parameters = ["critic_1", "critic_2", "actor", "entropy_loss", "alpha"]
+parameters = ["critic_1_loss", "critic_2_loss", "actor_loss", "entropy_loss", "alpha"]
 for index,parameter in enumerate(parameters):
     
     for i in range(len(headers1)//5):
@@ -28,7 +32,7 @@ for index,parameter in enumerate(parameters):
     plt.ylabel(parameter)
     plt.legend()
 
-    plt.savefig("runs/"+ filename + "/pic/" + parameter + '变化图.png')
+    plt.savefig("runs/"+ filename + "/pic/" + parameter + '随采样更新变化图.png')
     plt.clf()  # 清除整个图表
     
     
@@ -44,7 +48,7 @@ for i in range(len(headers2)-1):
 
 # 添加标题、标签和图例
 plt.title('episode_rewards for agent')
-plt.xlabel('Time steps')
+plt.xlabel('episode')
 plt.ylabel('Rewards')
 plt.legend()
 
@@ -54,8 +58,8 @@ plt.clf()  # 清除整个图表
 x = list(range(data2.shape[0]))
 y = data2.iloc[:, -1].tolist()
 plt.plot(x, y, label=headers2[-1])
-plt.title('系统总体reward')
-plt.xlabel('Time steps')
+plt.title('total_reward for system')
+plt.xlabel('episode')
 plt.ylabel('total_reward')
 plt.legend()
 
@@ -64,16 +68,16 @@ plt.clf()  # 清除整个图表
 
 # data3
 headers3 = data3.columns.tolist()
-items = ["test_episode", "trans_cost", "comp_cost"]
+items = ["test_reword", "trans_cost", "comp_cost", "total_cost"]
 for index, item in enumerate(items):
     x = list(range(data3.shape[0]))
     y = data3.iloc[:, index].tolist()
     
     plt.plot(x, y, label=headers3[index])
     plt.title(item + ' for agent')
-    plt.xlabel('Time steps')
+    plt.xlabel('Number of test')
     plt.ylabel(item)
     plt.legend()
 
-    plt.savefig("runs/"+ filename + "/pic/" + '评估结果{}.png'.format(item))
+    plt.savefig("runs/"+ filename + "/pic/" + '{}评估结果.png'.format(item))
     plt.clf()  # 清除整个图表

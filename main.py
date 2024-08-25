@@ -38,12 +38,12 @@ def set_fieldnames(agent_num):
         server_index, ud_index = index2ud(index, args.ud_num)
         
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_1')
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/critic_2')
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/policy')
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'loss/entropy_loss')
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'entropy_temprature/alpha')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_2')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/policy')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/entropy_loss')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'/alpha')
         
-        fd2.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train')
+        fd2.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_reward/train')
     fd2.append("total_reward")
     
     data1.append(fd1)
