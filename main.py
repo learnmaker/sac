@@ -175,7 +175,7 @@ if __name__ == '__main__':
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
     if args.encode_data:
-        encode_data = np.empty((0,), dtype=int)
+        encode_data = []
     
     # 设置表头
     set_fieldnames(agent_num)
@@ -292,7 +292,7 @@ if __name__ == '__main__':
                     else:
                         if args.global_info:
                             if args.encode_data:
-                                encode_data = np.vstack((encode_data, np.hstack(np.array(server_requests), np.array(servers_cache_states).view(-1))))
+                                encode_data.append(np.hstack((server_requests, servers_cache_states.flatten())))
                             state_comb = get_state_comb(state, server_requests, servers_cache_states)
                             action = agent.select_action(state_comb)
                         else:
@@ -370,7 +370,7 @@ if __name__ == '__main__':
             print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
         temp_data2.append(sum(temp_data2))
         data2.append(temp_data2)
-        print("encode_data.shape",encode_data.shape)
+        
         # 评估
         eval_freq = 5  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
