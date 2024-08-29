@@ -6,3 +6,6 @@ python main.py --exp-case case3 --no_automatic_entropy_tuning --eval --global-in
 python main.py --exp-case case5 --no_automatic_entropy_tuning --eval --global-info --cuda --max_episode 200
 原论文模型 + 计算卸载 + LSTM
 python main.py --exp-case case5 --no_automatic_entropy_tuning --eval --global-info --lstm --cuda --max_episode 200
+全局信息收集
+python main.py --exp-case case3 --encode_data --global-info --cuda --max_episode 50
+

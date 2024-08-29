@@ -74,7 +74,7 @@ for index, item in enumerate(items):
     y = data3.iloc[:, index].tolist()
     
     plt.plot(x, y, label=headers3[index])
-    plt.title(item + ' for agent')
+    plt.title(item + ' for system')
     plt.xlabel('Number of test')
     plt.ylabel(item)
     plt.legend()

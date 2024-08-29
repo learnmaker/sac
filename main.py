@@ -156,6 +156,9 @@ if __name__ == '__main__':
     # 是否使用cuda
     parser.add_argument('--cuda', action="store_true", default=False,
                         help='是否使用CUDA (default: False)')
+    # 是否收集全局信息
+    parser.add_argument('--encode_data', action="store_true", default=False,
+                        help='是否收集全局信息 (default: False)')
     # 服务器个数
     parser.add_argument('--server_num', type=int, default=2, metavar='N',
                         help='服务器个数 (default: 2)')
@@ -171,6 +174,8 @@ if __name__ == '__main__':
     weight = system_config['weight']
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
+    if args.encode_data:
+        encode_data = np.empty((0,), dtype=int)
     
     # 设置表头
     set_fieldnames(agent_num)
@@ -286,6 +291,8 @@ if __name__ == '__main__':
                         action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                     else:
                         if args.global_info:
+                            if args.encode_data:
+                                encode_data = np.vstack((encode_data, np.hstack(np.array(server_requests), np.array(servers_cache_states).view(-1))))
                             state_comb = get_state_comb(state, server_requests, servers_cache_states)
                             action = agent.select_action(state_comb)
                         else:
@@ -363,7 +370,7 @@ if __name__ == '__main__':
             print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
         temp_data2.append(sum(temp_data2))
         data2.append(temp_data2)
-
+        print("encode_data.shape",encode_data.shape)
         # 评估
         eval_freq = 5  # 评估频率
         if i_episode % eval_freq == 0 and args.eval is True:
@@ -464,6 +471,21 @@ if __name__ == '__main__':
             data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2), round(print_avg_trans, 2) + weight*round(print_avg_comp, 2)])
 
         # -------------------------------------------------每回合结束写入一次数据-----------------------------------------------------
+        if args.encode_data:
+            file_path = os.path.join("mydata/global_info", "encode_data.csv")
+            if i_episode==1:
+                if not os.path.exists("mydata/global_info"):
+                    os.makedirs("mydata/global_info")
+                with open(file_path, mode='w', newline='', encoding='utf-8') as file:
+                    writer = csv.writer(file)
+                    for row in encode_data:
+                        writer.writerow(row)
+            else:
+                with open(file_path, mode='a', newline='', encoding='utf-8') as file:
+                    writer = csv.writer(file)
+                    for row in encode_data:
+                        writer.writerow(row)
+            continue
         file_path1=os.path.join(data_directory, filename1)
         file_path2=os.path.join(data_directory, filename2)
         file_path3=os.path.join(data_directory, filename3)

@@ -12,12 +12,12 @@ epsilon = 1e-6
 seq_length = 50  # LSTM序列长度
 num_layers = 1  # LSTM层数
 
+
 # 遍历网络中的所有nn.Linear模块，并对它们的权重和偏置进行初始化
 def weights_init_(m):
     if isinstance(m, nn.Linear):
         torch.nn.init.xavier_uniform_(m.weight, gain=1) # 使用Xavier均匀分布初始化权重矩阵
         torch.nn.init.constant_(m.bias, 0) # 所有的偏置项都被初始化为0
-
 
 class ValueNetwork(nn.Module):
     def __init__(self, num_inputs, hidden_dim):
