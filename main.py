@@ -203,8 +203,9 @@ if __name__ == '__main__':
                                    "_offload" if args.exp_case == "case5" else "",
                                    "_lstm" if args.lstm else "",
                                    )
-    writer = SummaryWriter('runs/' + filename)
-    data_directory = data_directory + filename
+    if not args.encode_data:
+        writer = SummaryWriter('runs/' + filename)
+        data_directory = data_directory + filename
     
     snrs=[]
     Ats=[]
@@ -272,6 +273,9 @@ if __name__ == '__main__':
             masks=[]
             temp_data1=[]
             
+            if args.encode_data:
+                encode_data.append(np.hstack((np.array(server_requests), np.array(servers_cache_states).flatten())))
+                
             # 对每个agent进行训练
             for index in range(agent_num):
                 
@@ -291,8 +295,6 @@ if __name__ == '__main__':
                         action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                     else:
                         if args.global_info:
-                            if args.encode_data:
-                                encode_data.append(np.hstack((server_requests, servers_cache_states.flatten())))
                             state_comb = get_state_comb(state, server_requests, servers_cache_states)
                             action = agent.select_action(state_comb)
                         else:
@@ -310,21 +312,22 @@ if __name__ == '__main__':
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
                             memories[index], args.batch_size, updates, args.lstm)
-                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
-                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'loss/critic_2', critic_2_loss, updates)
-                        writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
-                                          str(ud_index+1)+'loss/policy', policy_loss, updates)
-                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'loss/entropy_loss', ent_loss, updates)
-                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'entropy_temprature/alpha', alpha, updates)
-                        temp_data1.append(critic_1_loss)
-                        temp_data1.append(critic_2_loss)
-                        temp_data1.append(policy_loss)
-                        temp_data1.append(ent_loss)
-                        temp_data1.append(alpha)
+                        if not args.encode_data:
+                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                                ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
+                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                                ud_index+1)+'loss/critic_2', critic_2_loss, updates)
+                            writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
+                                            str(ud_index+1)+'loss/policy', policy_loss, updates)
+                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                                ud_index+1)+'loss/entropy_loss', ent_loss, updates)
+                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                                ud_index+1)+'entropy_temprature/alpha', alpha, updates)
+                            temp_data1.append(critic_1_loss)
+                            temp_data1.append(critic_2_loss)
+                            temp_data1.append(policy_loss)
+                            temp_data1.append(ent_loss)
+                            temp_data1.append(alpha)
                         updates += 1
             
             if temp_data1:
@@ -362,14 +365,16 @@ if __name__ == '__main__':
             break
         
         print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 平均回报: {}, 总回报：{}, 总回报最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)/agent_num, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
-        temp_data2 = []
-        for index in range(agent_num):
-            server_index, ud_index = index2ud(index, args.ud_num)
-            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
-            temp_data2.append(episode_rewards[index])
-            print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
-        temp_data2.append(sum(temp_data2))
-        data2.append(temp_data2)
+        
+        if not args.encode_data:
+            temp_data2 = []
+            for index in range(agent_num):
+                server_index, ud_index = index2ud(index, args.ud_num)
+                writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
+                temp_data2.append(episode_rewards[index])
+                print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
+            temp_data2.append(sum(temp_data2))
+            data2.append(temp_data2)
         
         # 评估
         eval_freq = 5  # 评估频率
@@ -477,14 +482,14 @@ if __name__ == '__main__':
                 if not os.path.exists("mydata/global_info"):
                     os.makedirs("mydata/global_info")
                 with open(file_path, mode='w', newline='', encoding='utf-8') as file:
-                    writer = csv.writer(file)
+                    writer_encode = csv.writer(file)
                     for row in encode_data:
-                        writer.writerow(row)
+                        writer_encode.writerow(row)
             else:
                 with open(file_path, mode='a', newline='', encoding='utf-8') as file:
-                    writer = csv.writer(file)
+                    writer_encode = csv.writer(file)
                     for row in encode_data:
-                        writer.writerow(row)
+                        writer_encode.writerow(row)
             continue
         file_path1=os.path.join(data_directory, filename1)
         file_path2=os.path.join(data_directory, filename2)
