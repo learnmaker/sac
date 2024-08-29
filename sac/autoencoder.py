@@ -5,6 +5,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 
+from tool.data_loader import load_data
+
 # 定义自编码器模型
 class Autoencoder(nn.Module):
     def __init__(self, input_dim, hidden_dim):
@@ -30,12 +32,14 @@ class Autoencoder(nn.Module):
         encoded = self.encoder(x)
         decoded = self.decoder(encoded)
         return decoded
-    
-def train_encoder(task_num, agent_num):
+
+if __name__ == "__main__":
+    task_num = 8
+    agent_num = 6
     global_info_num = agent_num + agent_num * task_num * 2
 
     # 准备全局信息数据
-    global_info = np.random.rand(1000, global_info_num)  # 假设全局信息的形状为 (1000, 102)
+    global_info = load_data('./mydata/global_info/encode_data.csv')
     print(global_info)
     sys.exit()
 

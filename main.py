@@ -82,6 +82,7 @@ def get_state_comb(state, server_requests, servers_cache_states):
     state_comb = torch.cat((state, server_requests, servers_cache_states.view(-1)), dim=0)
     return state_comb
 
+# 保存实验数据位置
 data_directory = "runs/"
 filename1 = "update_parameters.csv"
 data1 = []
@@ -90,6 +91,7 @@ data2 = []
 filename3 = "eval.csv"
 data3 = []
 
+# LSTM序列长度
 sequence_length = 10
 state_sequence = []
 
@@ -243,7 +245,6 @@ if __name__ == '__main__':
     
     # ------------------------------------------------------3. 训练-----------------------------------------------------------------------------
     print("环境初始化完毕，开始训练")
-
     total_numsteps = 0  # 总训练步数
     updates = 0  # 总更新参数次数
     result_trans = []  # 保存传输消耗评估结果
@@ -287,7 +288,7 @@ if __name__ == '__main__':
                 agent = agents[index]
                 state = states[index]
                 
-                if args.start_steps > total_numsteps:
+                if args.start_steps > total_numsteps and args.encode_data:
                     action = env.action_space.sample()  # 随机动作
                 else:
                     if args.lstm:
@@ -306,28 +307,27 @@ if __name__ == '__main__':
                 mask = 1 if episode_step == env._max_episode_steps else float(not done)
                 masks.append(mask)
 
-                if len(memories[index]) > args.batch_size:
+                if len(memories[index]) > args.batch_size and not args.encode_data:
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
                             memories[index], args.batch_size, updates, args.lstm)
-                        if not args.encode_data:
-                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                                ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
-                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                                ud_index+1)+'loss/critic_2', critic_2_loss, updates)
-                            writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
-                                            str(ud_index+1)+'loss/policy', policy_loss, updates)
-                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                                ud_index+1)+'loss/entropy_loss', ent_loss, updates)
-                            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                                ud_index+1)+'entropy_temprature/alpha', alpha, updates)
-                            temp_data1.append(critic_1_loss)
-                            temp_data1.append(critic_2_loss)
-                            temp_data1.append(policy_loss)
-                            temp_data1.append(ent_loss)
-                            temp_data1.append(alpha)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'loss/critic_2', critic_2_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
+                                        str(ud_index+1)+'loss/policy', policy_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'loss/entropy_loss', ent_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'entropy_temprature/alpha', alpha, updates)
+                        temp_data1.append(critic_1_loss)
+                        temp_data1.append(critic_2_loss)
+                        temp_data1.append(policy_loss)
+                        temp_data1.append(ent_loss)
+                        temp_data1.append(alpha)
                         updates += 1
             
             if temp_data1:
