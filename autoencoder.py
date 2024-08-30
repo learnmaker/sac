@@ -39,8 +39,6 @@ if __name__ == "__main__":
 
     # 准备全局信息数据
     global_info = load_data('./mydata/global_info/encode_data.csv')
-    print(global_info)
-    sys.exit()
 
     # 转换为 PyTorch 的张量
     global_info_tensor = torch.tensor(global_info, dtype=torch.float32)

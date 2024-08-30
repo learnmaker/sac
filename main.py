@@ -7,6 +7,7 @@ import itertools
 import torch
 import sys
 import csv
+from autoencoder import Autoencoder
 from sac.sac import SAC
 from tool.generate_snrs import generate_snrs
 from tool.samples_from_transmat import generate_request
@@ -51,16 +52,15 @@ def set_fieldnames(agent_num):
     data3.append(fd3)
     return
 
-def add_state(i, state, server_requests, servers_cache_states):
+def add_state_sequence(i, state, global_info):
     state = np.array(state)
-    server_requests = np.array(server_requests)
-    servers_cache_states = np.array(servers_cache_states)
+    global_info = np.array(global_info)
     
     if len(state_sequence[i]) < sequence_length:
-        state_sequence[i].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
+        state_sequence[i].append(np.concatenate((state, global_info)))
     else:
         state_sequence[i] = state_sequence[i][1:]
-        state_sequence[i].append(np.concatenate((state, server_requests, servers_cache_states.reshape(-1))))
+        state_sequence[i].append(np.concatenate((state, global_info)))
     return
 
 def get_state_sequence(i, state_dim):
@@ -75,11 +75,10 @@ def get_state_sequence(i, state_dim):
     state_sequence_tensor = torch.from_numpy(state_sequence_np).float()
     return  state_sequence_tensor
 
-def get_state_comb(state, server_requests, servers_cache_states):
+def get_state_comb(state, global_info):
     state = torch.FloatTensor(state)
-    server_requests = torch.FloatTensor(server_requests)
-    servers_cache_states = torch.FloatTensor(servers_cache_states)
-    state_comb = torch.cat((state, server_requests, servers_cache_states.view(-1)), dim=0)
+    global_info = torch.FloatTensor(global_info)
+    state_comb = torch.cat((state, global_info), dim=0)
     return state_comb
 
 # 保存实验数据位置
@@ -158,9 +157,6 @@ if __name__ == '__main__':
     # 是否使用cuda
     parser.add_argument('--cuda', action="store_true", default=False,
                         help='是否使用CUDA (default: False)')
-    # 是否收集全局信息
-    parser.add_argument('--encode_data', action="store_true", default=False,
-                        help='是否收集全局信息 (default: False)')
     # 服务器个数
     parser.add_argument('--server_num', type=int, default=2, metavar='N',
                         help='服务器个数 (default: 2)')
@@ -176,8 +172,6 @@ if __name__ == '__main__':
     weight = system_config['weight']
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
-    if args.encode_data:
-        encode_data = []
     
     # 设置表头
     set_fieldnames(agent_num)
@@ -200,14 +194,13 @@ if __name__ == '__main__':
 
     # Tensorboard保存实验数据
     filename = '{}_SAC_{}{}{}{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
-                                   args.exp_case, 
-                                   "_global-info" if args.global_info else "",
-                                   "_offload" if args.exp_case == "case5" else "",
-                                   "_lstm" if args.lstm else "",
-                                   )
-    if not args.encode_data:
-        writer = SummaryWriter('runs/' + filename)
-        data_directory = data_directory + filename
+                                args.exp_case, 
+                                "_global-info" if args.global_info else "",
+                                "_offload" if args.exp_case == "case5" else "",
+                                "_lstm" if args.lstm else "",
+                                )
+    writer = SummaryWriter('runs/' + filename)
+    data_directory = data_directory + filename
     
     snrs=[]
     Ats=[]
@@ -249,7 +242,13 @@ if __name__ == '__main__':
     updates = 0  # 总更新参数次数
     result_trans = []  # 保存传输消耗评估结果
     result_comp = []  # 保存计算消耗评估结果
-
+    
+    # 加载训练好的模型
+    if not args.global_info:
+        model = Autoencoder(state_dim, 32)
+        model.load_state_dict(torch.load('autoencoder.pth'))
+        model.eval()  # 设置为评估模式
+    
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
         # 初始化
         episode_rewards = np.full(agent_num, 0.)
@@ -257,15 +256,17 @@ if __name__ == '__main__':
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
         if args.global_info:
-            server_requests = env.get_requests()
-            servers_cache_states = env.get_cach_state()
+            server_requests = torch.FloatTensor(env.get_requests())
+            servers_cache_states = torch.FloatTensor(env.get_cach_state())
+            combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
+            global_info = model.encoder(combined_input).numpy()
         # print("回合",i_episode,"开始训练")
         
         if args.lstm:
             h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
             for i in range(agent_num):
                 state = states[i]
-                add_state(i, state, server_requests, servers_cache_states)
+                add_state_sequence(i, state, global_info)
             
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
@@ -288,7 +289,7 @@ if __name__ == '__main__':
                 agent = agents[index]
                 state = states[index]
                 
-                if args.start_steps > total_numsteps and args.encode_data:
+                if args.start_steps > total_numsteps or args.encode_data:
                     action = env.action_space.sample()  # 随机动作
                 else:
                     if args.lstm:
@@ -296,7 +297,7 @@ if __name__ == '__main__':
                         action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                     else:
                         if args.global_info:
-                            state_comb = get_state_comb(state, server_requests, servers_cache_states)
+                            state_comb = get_state_comb(state, global_info)
                             action = agent.select_action(state_comb)
                         else:
                             action = agent.select_action(state)
@@ -330,7 +331,7 @@ if __name__ == '__main__':
                         temp_data1.append(alpha)
                         updates += 1
             
-            if temp_data1:
+            if temp_data1 and not args.encode_data:
                 data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
@@ -338,17 +339,21 @@ if __name__ == '__main__':
             for i in range(agent_num):
                 if args.lstm:
                     state_seq = get_state_sequence(i, state_dim)
-                    server_requests = env.get_requests()
-                    servers_cache_states = env.get_cach_state()
-                    add_state(i, next_states[i], server_requests, servers_cache_states)
+                    server_requests = torch.FloatTensor(env.get_requests())
+                    servers_cache_states = torch.FloatTensor(env.get_cach_state())
+                    combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
+                    global_info = model.encoder(combined_input).numpy()
+                    add_state_sequence(i, next_states[i], global_info)
                     next_state_seq = get_state_sequence(i, state_dim)
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
                     if args.global_info:
                         state_comb = get_state_comb(states[i], server_requests, servers_cache_states)
-                        server_requests = env.get_requests()
-                        servers_cache_states = env.get_cach_state()
-                        next_state_comb = get_state_comb(next_states[i], server_requests, servers_cache_states)
+                        server_requests = torch.FloatTensor(env.get_requests())
+                        servers_cache_states = torch.FloatTensor(env.get_cach_state())
+                        combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
+                        global_info = model.encoder(combined_input).numpy()
+                        next_state_comb = get_state_comb(next_states[i], global_info)
                         memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
                     else:
                         memories[i].push(states[i], actions[i], rewards[i], next_states[i], masks[i])
@@ -378,7 +383,7 @@ if __name__ == '__main__':
         
         # 评估
         eval_freq = 5  # 评估频率
-        if i_episode % eval_freq == 0 and args.eval is True:
+        if i_episode % eval_freq == 0 and args.eval and not args.encode_data:
             
             avg_reward = 0
             avg_trans_cost = 0
@@ -399,7 +404,7 @@ if __name__ == '__main__':
                     h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
                     for i in range(agent_num):
                         state = states[i]
-                        add_state(i, state, server_requests, servers_cache_states)
+                        add_state_sequence(i, state, server_requests, servers_cache_states)
                         
                 while np.sum(dones == False) > 0:
                     
@@ -431,7 +436,7 @@ if __name__ == '__main__':
                         ervers_cache_states = env.get_cach_state()
                     if args.lstm:
                         for i in range(agent_num):
-                            add_state(i, next_states[i], server_requests, servers_cache_states)
+                            add_state_sequence(i, next_states[i], server_requests, servers_cache_states)
                             
                     episode_reward += np.sum(rewards)
                         
@@ -476,21 +481,6 @@ if __name__ == '__main__':
             data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2), round(print_avg_trans, 2) + weight*round(print_avg_comp, 2)])
 
         # -------------------------------------------------每回合结束写入一次数据-----------------------------------------------------
-        if args.encode_data:
-            file_path = os.path.join("mydata/global_info", "encode_data.csv")
-            if i_episode==1:
-                if not os.path.exists("mydata/global_info"):
-                    os.makedirs("mydata/global_info")
-                with open(file_path, mode='w', newline='', encoding='utf-8') as file:
-                    writer_encode = csv.writer(file)
-                    for row in encode_data:
-                        writer_encode.writerow(row)
-            else:
-                with open(file_path, mode='a', newline='', encoding='utf-8') as file:
-                    writer_encode = csv.writer(file)
-                    for row in encode_data:
-                        writer_encode.writerow(row)
-            continue
         file_path1=os.path.join(data_directory, filename1)
         file_path2=os.path.join(data_directory, filename2)
         file_path3=os.path.join(data_directory, filename3)

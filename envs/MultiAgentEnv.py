@@ -6,6 +6,7 @@ import random
 import numpy as np
 from random import seed
 from gym import spaces
+import torch
 
 # set parent directory as sys path
 current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
@@ -128,7 +129,6 @@ class MultiAgentEnv(object):
     
     def get_cach_state(self):
         return [[row[i] for i in range(len(row) - 1)] for row in self.sys_states]
-    
     def get_last_use(self):
         return self.last_use
     
