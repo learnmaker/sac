@@ -172,6 +172,7 @@ if __name__ == '__main__':
     weight = system_config['weight']
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
+    global_info_size = 32
     
     # 设置表头
     set_fieldnames(agent_num)
@@ -184,7 +185,6 @@ if __name__ == '__main__':
     if args.global_info:
         # 保存所有用户设备的任务请求，agent_num，初始化为-1
         server_requests = np.full(agent_num, -1)
-
         # 保存所有用户设备的缓存状态，agent_num * task_num * 2，初始化为0
         servers_cache_states = np.full((agent_num, task_num, 2), 0)
 
@@ -212,7 +212,7 @@ if __name__ == '__main__':
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
     
     if args.global_info:
-        state_dim = 2*task_num+1 + server_requests.size + servers_cache_states.size
+        state_dim = 2*task_num+1 + global_info_size
     else:
         state_dim = 2*task_num+1
     
@@ -244,8 +244,8 @@ if __name__ == '__main__':
     result_comp = []  # 保存计算消耗评估结果
     
     # 加载训练好的模型
-    if not args.global_info:
-        model = Autoencoder(state_dim, 32)
+    if args.global_info:
+        model = Autoencoder(server_requests.size + servers_cache_states.size, global_info_size)
         model.load_state_dict(torch.load('autoencoder.pth'))
         model.eval()  # 设置为评估模式
     
@@ -255,18 +255,18 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
+        
         if args.global_info:
             server_requests = torch.FloatTensor(env.get_requests())
             servers_cache_states = torch.FloatTensor(env.get_cach_state())
             combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-            global_info = model.encoder(combined_input).numpy()
-        # print("回合",i_episode,"开始训练")
-        
-        if args.lstm:
-            h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
-            for i in range(agent_num):
-                state = states[i]
-                add_state_sequence(i, state, global_info)
+            global_info = model.encoder(combined_input).detach().numpy()
+            
+            if args.lstm:
+                h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+                for i in range(agent_num):
+                    state = states[i]
+                    add_state_sequence(i, state, global_info)
             
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
@@ -274,9 +274,6 @@ if __name__ == '__main__':
             actions=[]
             masks=[]
             temp_data1=[]
-            
-            if args.encode_data:
-                encode_data.append(np.hstack((np.array(server_requests), np.array(servers_cache_states).flatten())))
                 
             # 对每个agent进行训练
             for index in range(agent_num):
@@ -289,7 +286,7 @@ if __name__ == '__main__':
                 agent = agents[index]
                 state = states[index]
                 
-                if args.start_steps > total_numsteps or args.encode_data:
+                if args.start_steps > total_numsteps:
                     action = env.action_space.sample()  # 随机动作
                 else:
                     if args.lstm:
@@ -308,7 +305,7 @@ if __name__ == '__main__':
                 mask = 1 if episode_step == env._max_episode_steps else float(not done)
                 masks.append(mask)
 
-                if len(memories[index]) > args.batch_size and not args.encode_data:
+                if len(memories[index]) > args.batch_size:
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
@@ -331,7 +328,7 @@ if __name__ == '__main__':
                         temp_data1.append(alpha)
                         updates += 1
             
-            if temp_data1 and not args.encode_data:
+            if temp_data1:
                 data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
@@ -342,17 +339,17 @@ if __name__ == '__main__':
                     server_requests = torch.FloatTensor(env.get_requests())
                     servers_cache_states = torch.FloatTensor(env.get_cach_state())
                     combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-                    global_info = model.encoder(combined_input).numpy()
+                    global_info = model.encoder(combined_input).detach().numpy()
                     add_state_sequence(i, next_states[i], global_info)
                     next_state_seq = get_state_sequence(i, state_dim)
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
                     if args.global_info:
-                        state_comb = get_state_comb(states[i], server_requests, servers_cache_states)
+                        state_comb = get_state_comb(states[i], global_info)
                         server_requests = torch.FloatTensor(env.get_requests())
                         servers_cache_states = torch.FloatTensor(env.get_cach_state())
                         combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-                        global_info = model.encoder(combined_input).numpy()
+                        global_info = model.encoder(combined_input).detach().numpy()
                         next_state_comb = get_state_comb(next_states[i], global_info)
                         memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
                     else:
@@ -363,32 +360,30 @@ if __name__ == '__main__':
             episode_step += 1
             states = next_states
             dones = new_dones
-            
             total_numsteps += 1
            
         if i_episode > args.max_episode:
             break
         
         print("Episode: {}, 总训练步数: {}, 本回合步数: {}, 平均回报: {}, 总回报：{}, 总回报最大位: 10**{}".format(i_episode, total_numsteps, episode_step, np.sum(episode_rewards)/agent_num, np.sum(episode_rewards), find_max_digit_position(np.sum(episode_rewards))))
-        
-        if not args.encode_data:
-            temp_data2 = []
-            for index in range(agent_num):
-                server_index, ud_index = index2ud(index, args.ud_num)
-                writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
-                temp_data2.append(episode_rewards[index])
-                print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
-            temp_data2.append(sum(temp_data2))
-            data2.append(temp_data2)
+
+        temp_data2 = []
+        for index in range(agent_num):
+            server_index, ud_index = index2ud(index, args.ud_num)
+            writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'reward/train', episode_rewards[index], i_episode)
+            temp_data2.append(episode_rewards[index])
+            print("server{}_userDevice{}_reward: {}".format(server_index + 1, ud_index + 1, round(episode_rewards[index], 2)))
+        temp_data2.append(sum(temp_data2))
+        data2.append(temp_data2)
         
         # 评估
         eval_freq = 5  # 评估频率
-        if i_episode % eval_freq == 0 and args.eval and not args.encode_data:
+        if i_episode % eval_freq == 0 and args.eval:
             
             avg_reward = 0
             avg_trans_cost = 0
             avg_compute_cost = 0
-            episodes = 5  # 取10次的平均值，计算网络的奖励
+            episodes = 5  # 取5次的平均值，计算网络的奖励
             done_step = 0
             
             for _ in range(episodes):
@@ -398,13 +393,15 @@ if __name__ == '__main__':
                 states = env.reset()
                 dones = np.full(agent_num, False)
                 if args.global_info:
-                    server_requests = env.get_requests()
-                    ervers_cache_states = env.get_cach_state()
-                if args.lstm:
-                    h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
-                    for i in range(agent_num):
-                        state = states[i]
-                        add_state_sequence(i, state, server_requests, servers_cache_states)
+                    server_requests = torch.FloatTensor(env.get_requests())
+                    servers_cache_states = torch.FloatTensor(env.get_cach_state())
+                    combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
+                    global_info = model.encoder(combined_input).detach().numpy()
+                    if args.lstm:
+                        h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+                        for i in range(agent_num):
+                            state = states[i]
+                            add_state_sequence(i, state, global_info)
                         
                 while np.sum(dones == False) > 0:
                     
@@ -423,7 +420,7 @@ if __name__ == '__main__':
                             action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                         else:
                             if args.global_info:
-                                state_comb = get_state_comb(state, server_requests, servers_cache_states)
+                                state_comb = get_state_comb(state, global_info)
                                 action = agent.select_action(state_comb)
                             else:
                                 action = agent.select_action(state)
@@ -432,11 +429,13 @@ if __name__ == '__main__':
                     next_states, rewards, new_dones, infos = env.step(actions)
                     # 执行动作后，立刻更新任务缓存
                     if args.global_info:
-                        server_requests = env.get_requests()
-                        ervers_cache_states = env.get_cach_state()
-                    if args.lstm:
-                        for i in range(agent_num):
-                            add_state_sequence(i, next_states[i], server_requests, servers_cache_states)
+                        server_requests = torch.FloatTensor(env.get_requests())
+                        servers_cache_states = torch.FloatTensor(env.get_cach_state())
+                        combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
+                        global_info = model.encoder(combined_input).detach().numpy()
+                        if args.lstm:
+                            for i in range(agent_num):
+                                add_state_sequence(i, next_states[i], global_info)
                             
                     episode_reward += np.sum(rewards)
                         

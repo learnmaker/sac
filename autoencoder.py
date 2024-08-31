@@ -39,6 +39,7 @@ if __name__ == "__main__":
 
     # 准备全局信息数据
     global_info = load_data('./mydata/global_info/encode_data.csv')
+    print("读取数据")
 
     # 转换为 PyTorch 的张量
     global_info_tensor = torch.tensor(global_info, dtype=torch.float32)
@@ -72,4 +73,5 @@ if __name__ == "__main__":
 
     # 保存训练好的模型
     torch.save(model.state_dict(), 'autoencoder.pth')
+    print("训练完成")
 

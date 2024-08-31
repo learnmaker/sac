@@ -1,4 +1,7 @@
 runs/
-envs/__pycache__/
+data/
 __pycache__/
+envs/__pycache__/
+tool/__pycache__/
 *.pyc
+autoencoder.pth
