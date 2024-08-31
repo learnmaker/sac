@@ -1,5 +1,6 @@
 runs/
 data/
+mydata/
 __pycache__/
 envs/__pycache__/
 tool/__pycache__/
