@@ -35,7 +35,7 @@ class ValueNetwork(nn.Module):
         x = self.linear3(x)
         return x
 
-
+# ----------------------------------------------------------------critic网络--------------------------------------------------------------
 class QNetwork(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim):
         super(QNetwork, self).__init__()
@@ -65,7 +65,6 @@ class QNetwork(nn.Module):
 
         return x1, x2
     
-# 定义LSTMCritic类
 class LSTMCritic(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim):
         super(LSTMCritic, self).__init__()
@@ -100,7 +99,8 @@ class LSTMCritic(nn.Module):
         x2 = self.linear6(x2)
 
         return x1, x2
-
+    
+# ----------------------------------------------------------------actor网络--------------------------------------------------------------
 class GaussianPolicy(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim, action_space=None):
         super(GaussianPolicy, self).__init__()

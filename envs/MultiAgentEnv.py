@@ -179,10 +179,8 @@ class MultiAgentEnv(object):
             self.last_use[index][int(self.sys_states[index][-1])] = (self.current_step - 1) # 记录资源的最后一次使用时间
             self.popularity[index][int(self.sys_states[index][-1])] += 1 #记录资源的使用频率
             action = actions[index]
-            # print("agent", index)
             action, prob_action = self.sample2action(action)
             valid, action = self.check_action_validity(index, action, prob_action)
-            # self.show_action(action)
             if valid == False:
                 new_valid = False
             new_actions.append(action)
@@ -192,10 +190,6 @@ class MultiAgentEnv(object):
             observation, observe_details, details2, prize = self.calc_observation_offload(new_actions)
         else:
             observation, observe_details, details2 = self.calc_observation(new_actions)
-        # print("new_valid",new_valid)
-        # print("observation",observation)
-        # self.show_detail2(details2)
-        # print("prize",prize)
         for i in range(self.agent_num):
             if self.current_step > MAX_STEPS:
                 dones[i] = True

@@ -332,7 +332,7 @@ if __name__ == '__main__':
                 data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-            # print("当前step",episode_step)
+
             for i in range(agent_num):
                 if args.lstm:
                     state_seq = get_state_sequence(i, state_dim)
