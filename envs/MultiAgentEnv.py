@@ -196,12 +196,12 @@ class MultiAgentEnv(object):
 
         obs = self.next_state(new_actions, new_valid)
         self.sys_states = obs    # 更新系统状态
-
+        total_cost_weight = 1
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
-            rewards = -(observation - prize) / 1e6
+            rewards = -( total_cost_weight * sum(observation) + observation - prize) / 1e6
         else:
-            rewards = - observation / 1e6
+            rewards = - (total_cost_weight * sum(observation) + observation) / 1e6
         actions = self.action2sample(new_actions)
 
         return self.scale_state(self.sys_states), rewards, dones, {'observe_details': observe_details, 'actions': actions}
