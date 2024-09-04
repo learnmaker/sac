@@ -116,13 +116,13 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', default=False,
                         help='是否评估 (default: False)')
     # 折现因子
-    parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
+    parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
                         help='reward折现因子 (default: 0.99)')
     # 目标平滑系数 θi_bar = ξ * θi + (1 - ξ) * θi_bar
-    parser.add_argument('--tau', type=float, default=0.005, metavar='G',
+    parser.add_argument('--tau', type=float, default=0.05, metavar='G',
                         help='目标平滑系数(τ) (default: 0.005)')
     # 学习率
-    parser.add_argument('--lr', type=float, default=3e-4, metavar='G',
+    parser.add_argument('--lr', type=float, default=1e-4, metavar='G',
                         help='学习率 (default: 0.0003)')
     # 熵前面的温度系数
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
@@ -134,7 +134,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='随机种子 (default: 123456)')
     # 批量大小
-    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=512, metavar='N',
                         help='批量大小 (default: 256)')
     # 最大迭代次数
     parser.add_argument('--max_episode', type=int, default=300, metavar='N',
