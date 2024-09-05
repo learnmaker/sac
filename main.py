@@ -81,6 +81,11 @@ def get_state_comb(state, global_info):
     state_comb = torch.cat((state, global_info), dim=0)
     return state_comb
 
+def show_states(states):
+    for index in range(len(states)):
+        state = states[index]
+        print("agent",index,"state:",state)
+        
 # 保存实验数据位置
 data_directory = "runs/"
 filename1 = "update_parameters.csv"
@@ -172,7 +177,7 @@ if __name__ == '__main__':
     weight = system_config['weight']
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
-    global_info_size = 32
+    global_info_size = 16
     
     # 设置表头
     set_fieldnames(agent_num)
@@ -296,9 +301,10 @@ if __name__ == '__main__':
                         if args.global_info:
                             state_comb = get_state_comb(state, global_info)
                             action = agent.select_action(state_comb)
+                            
                         else:
                             action = agent.select_action(state)
-                 
+
                 server_index, ud_index = index2ud(index, args.ud_num)
                 actions.append(action)
                 
@@ -332,7 +338,11 @@ if __name__ == '__main__':
                 data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-
+            
+            # show_states(states)
+            # env.show_actions(actions)
+            # sys.exit()
+            
             for i in range(agent_num):
                 if args.lstm:
                     state_seq = get_state_sequence(i, state_dim)

@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     # 定义模型、损失函数和优化器
     input_dim = global_info_num  # 全局信息的维度
-    hidden_dim = 32  # 降维后的维度
+    hidden_dim = 16  # 降维后的维度
     model = Autoencoder(input_dim, hidden_dim)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)

@@ -129,11 +129,9 @@ class MultiAgentEnv(object):
     
     def get_cach_state(self):
         return [[row[i] for i in range(len(row) - 1)] for row in self.sys_states]
+    
     def get_last_use(self):
         return self.last_use
-    
-    def show_action(self, action):
-        print("计算核数: {}, 主动传输：{}, dSI_f: {}, dSO_f: {}, 卸载对象: {}".format(action[0], action[1:num_task+1], action[num_task+1:num_task*2+1], action[num_task*2+1:num_task*3+1], action[-1]))
     
     def show_detail2(self, detail2):
         print("被动传输消耗, 主动传输消耗, 被动计算消耗, 主动计算消耗")
@@ -141,6 +139,13 @@ class MultiAgentEnv(object):
         for i in range(self.agent_num):
             print("agent",i,detail2[i])
             
+    def show_actions(self, actions):
+        for index in range(self.agent_num):
+            action = actions[index]
+            action, prob_action = self.sample2action(action)
+            print("agent",index,"action:",action)
+        return
+             
     def step(self, actions):
         """
         Parameters
