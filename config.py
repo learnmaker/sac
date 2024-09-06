@@ -1,5 +1,5 @@
 chip_config ={
-    'tau': 0.02,   # maximum tolerance service latency, second, default 0.02
+    'tau': 0.1,   # maximum tolerance service latency, second, default 0.02
     'fD': 1.7e8,    # computation frequency of mobile device, 1.5~5GHz, default 1.7e8
     'u': 1e-19,     # effective switched capacitance related to chip architecture, default 1e-19
     'C': 20e3,    # cache size constraint, test, default 20e3

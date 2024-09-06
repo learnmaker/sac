@@ -201,12 +201,12 @@ class MultiAgentEnv(object):
 
         obs = self.next_state(new_actions, new_valid)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 2
+        total_cost_weight = 0.95
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
-            rewards = -( total_cost_weight * sum(observation) + observation - prize) / 1e6
+            rewards = - (total_cost_weight * sum(observation) + (1-total_cost_weight) * (observation - prize)) / 1e6
         else:
-            rewards = - (total_cost_weight * sum(observation) + observation) / 1e6
+            rewards = - (total_cost_weight * sum(observation) + (1-total_cost_weight) * observation) / 1e6
         actions = self.action2sample(new_actions)
 
         return self.scale_state(self.sys_states), rewards, dones, {'observe_details': observe_details, 'actions': actions}
@@ -256,7 +256,9 @@ class MultiAgentEnv(object):
             else:
                 B_R = (1 - S_I_At) * (1 - S_O_At) * I_At / ((tau - I_At * w_At / (C_R_At * fD)) * math.log2(1 + snr_t))
             E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
-
+            print("延迟时间",tau)
+            print("剩余时间",tau - I_At * w_At / (C_R_At * fD))
+            
             total_B_R[agent_i] = B_R
             total_E_R[agent_i] = E_R
             if self.reactive_only:
@@ -271,7 +273,7 @@ class MultiAgentEnv(object):
             
             total_E_P[agent_i] = E_P
             total_B_P[agent_i] = B_P
-            
+        sys.exit()   
         return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P]
     
     # 计算传输消耗和计算消耗
