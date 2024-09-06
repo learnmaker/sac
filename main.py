@@ -128,7 +128,7 @@ if __name__ == '__main__':
                         help='目标平滑系数(τ) (default: 0.005)')
     # 学习率
     parser.add_argument('--lr', type=float, default=1e-4, metavar='G',
-                        help='学习率 (default: 0.0003)')
+                        help='学习率 (default: 0.0004)')
     # 熵前面的温度系数
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                         help='温度系数 (default: 0.2)')
