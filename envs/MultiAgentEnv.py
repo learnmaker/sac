@@ -333,8 +333,8 @@ class MultiAgentEnv(object):
                     else:
                         local = False
                     if flag:
-                        total_I[offload_agent] += 999999
-                        # print("无法得到卸载反馈结果，+999999")
+                        total_I[offload_agent] += 99999
+                        # print("无法得到卸载反馈结果，+99999")
                         continue
                     
                     E_R=0
@@ -357,8 +357,8 @@ class MultiAgentEnv(object):
                         C_time[agent_i] += I_At * w_At / (C_R_At * fD)
                         # 如果计算时间大于最大容许延迟
                         if C_time[agent_i] >= tau:
-                            total_I[offload_agent] += 999999
-                            # print("计算时间大于最大容许延迟, +999999")
+                            total_I[offload_agent] += 99999
+                            # print("计算时间大于最大容许延迟, +99999")
                             C_time[agent_i] -= I_At * w_At / (C_R_At * fD)
                             flag = True
                             continue

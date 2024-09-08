@@ -124,7 +124,7 @@ if __name__ == '__main__':
     parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
                         help='reward折现因子 (default: 0.99)')
     # 目标平滑系数 θi_bar = ξ * θi + (1 - ξ) * θi_bar
-    parser.add_argument('--tau', type=float, default=0.05, metavar='G',
+    parser.add_argument('--tau', type=float, default=0.005, metavar='G',
                         help='目标平滑系数(τ) (default: 0.005)')
     # 学习率
     parser.add_argument('--lr', type=float, default=1e-4, metavar='G',
