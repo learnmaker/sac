@@ -201,10 +201,10 @@ class MultiAgentEnv(object):
 
         obs = self.next_state(new_actions, new_valid)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 0.95
+        total_cost_weight = 1
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
-            rewards = - (total_cost_weight * sum(observation) + (1-total_cost_weight) * (observation - prize)) / 1e6
+            rewards = - (total_cost_weight * sum(observation + prize) + (1-total_cost_weight) * (observation)) / 1e6
         else:
             rewards = - (total_cost_weight * sum(observation) + (1-total_cost_weight) * observation) / 1e6
         actions = self.action2sample(new_actions)
@@ -286,11 +286,11 @@ class MultiAgentEnv(object):
         total_B_P=np.full(self.agent_num, 0.)
         total_E_R=np.full(self.agent_num, 0.)
         total_E_P=np.full(self.agent_num, 0.)
+
         total_prize = np.full(self.agent_num, 0.)
         total_I = np.full(self.agent_num, 0.)
-        prize_E = np.full(self.agent_num, 0.)
-        prize_B = np.full(self.agent_num, 0.)
         C_time = np.full(self.agent_num, 0.)
+
         # 更新任务列表
         for agent_i in range(self.agent_num):
             # 当前agent产生的任务
@@ -300,7 +300,7 @@ class MultiAgentEnv(object):
             if O == -1:
                 self.task_lists[agent_i]=[[-1, A_t]] + self.task_lists[agent_i]
             else:
-                self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载的A_t任务
+                self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载给O的A_t任务
         # print("任务列表", self.task_lists)
         
         # 对每个agent
@@ -317,12 +317,12 @@ class MultiAgentEnv(object):
             
             # 计算核数
             C_R_At = actions[agent_i][0]
+
             # 如果任务列表不为空
             if agent_i_tasks:
-                
-                flag = False
-                local_At = -1
-                local = False
+                flag = False # 是否溢出
+                local_At = -1 # 本地计算任务
+                local = False # 是否为本地计算任务
                 # 对agent的每个任务
                 for task in agent_i_tasks:
                     offload_agent, offload_A_t = task
@@ -333,7 +333,7 @@ class MultiAgentEnv(object):
                     else:
                         local = False
                     if flag:
-                        total_I[offload_agent] += 99999
+                        total_prize[offload_agent] += 99999
                         # print("无法得到卸载反馈结果，+99999")
                         continue
                     
@@ -357,8 +357,8 @@ class MultiAgentEnv(object):
                         C_time[agent_i] += I_At * w_At / (C_R_At * fD)
                         # 如果计算时间大于最大容许延迟
                         if C_time[agent_i] >= tau:
-                            total_I[offload_agent] += 99999
-                            # print("计算时间大于最大容许延迟, +99999")
+                            # 惩罚卸载用户
+                            total_prize[offload_agent] += 99999
                             C_time[agent_i] -= I_At * w_At / (C_R_At * fD)
                             flag = True
                             continue
@@ -366,7 +366,7 @@ class MultiAgentEnv(object):
                         E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
                             
                         # 如果没有输入数据，需要从服务器下载数据
-                        if S_I_At == 0 and  offload_A_t != local_At:
+                        if S_I_At == 0 and offload_A_t != local_At:
                             total_I[agent_i] += I_At
                             # print("从服务器下载数据, +",I_At)
                             B_R += I_At
@@ -377,8 +377,6 @@ class MultiAgentEnv(object):
                         B_R += O_At
                         total_I[offload_agent] += O_At
                         # print("计算结果回传, +",O_At)
-                        prize_E[agent_i]+=E_R
-                        prize_B[agent_i]+=B_R
                     else:
                         local_At = offload_A_t
                         
@@ -388,7 +386,7 @@ class MultiAgentEnv(object):
             snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
             # 处理完所有任务，计算被动传输带宽
             total_B_R[agent_i] = total_I[agent_i] / ((tau - C_time[agent_i]) * math.log2(1 + snr_local))
-            total_prize[agent_i] = (prize_E[agent_i] * weight + prize_B[agent_i] / ((tau - C_time[agent_i]) * math.log2(1 + snr_local))) * 1.2
+            # total_prize[agent_i] = (prize_E[agent_i] * weight + prize_B[agent_i] / ((tau - C_time[agent_i]) * math.log2(1 + snr_local))) * 1.2
 
         total_B_R = np.array(total_B_R)
         total_E_R = np.array(total_E_R)
