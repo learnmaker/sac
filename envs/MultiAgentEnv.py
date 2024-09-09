@@ -302,7 +302,7 @@ class MultiAgentEnv(object):
             else:
                 self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载给O的A_t任务
         # print("任务列表", self.task_lists)
-        
+        self.showActions(actions)
         # 对每个agent
         for agent_i in range(self.agent_num):
             snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
@@ -635,3 +635,7 @@ class MultiAgentEnv(object):
 
     def getCurrent_step(self):
         return self.current_step
+    
+    def showActions(self, actions):
+        for i, action in enumerate(actions):
+            print("agent",i,"动作：",action[0],action[1:num_task+1],action[num_task+1:2*num_task+1],action[2*num_task+1:3*num_task+1],action[-1])

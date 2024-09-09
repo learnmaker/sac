@@ -2,12 +2,19 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: main.py with parameters",
+            "name": "Python: Main",
             "type": "python",
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
-            "args": ["--exp-case", "case3", "--eval", "--cuda"],
+            "args": [
+                "--exp-case", "case5",
+                "--no_automatic_entropy_tuning",
+                "--eval",
+                "--global-info",
+                "--cuda",
+                "--max_episode", "200"
+            ],
             "justMyCode": false
         }
     ]

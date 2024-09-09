@@ -121,7 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true', default=False,
                         help='是否评估 (default: False)')
     # 折现因子
-    parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
+    parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                         help='reward折现因子 (default: 0.99)')
     # 目标平滑系数 θi_bar = ξ * θi + (1 - ξ) * θi_bar
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
