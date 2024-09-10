@@ -304,8 +304,10 @@ class MultiAgentEnv(object):
                 self.task_lists[agent_i]=[[-1, A_t]] + self.task_lists[agent_i]
             else:
                 self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载给O的A_t任务
+                
         # print("任务列表", self.task_lists)
-        self.showActions(actions)
+        # self.showActions(actions)
+        
         # 对每个agent
         for agent_i in range(self.agent_num):
             snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
