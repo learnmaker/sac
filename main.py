@@ -526,3 +526,4 @@ if __name__ == '__main__':
         data1 = []
         data2 = []
         data3 = []
+    print("不合格动作：",env.getNotValid())

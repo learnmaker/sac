@@ -63,6 +63,7 @@ class MultiAgentEnv(object):
         self.offload = False
         self.exp_case = exp_case
         
+        self.not_vaild = 0
         print("所选的实验配置为: {}".format(exp_case))
         
         if exp_case == 'case1':  # case 1: no cache, reactive only, best fD choice (as baseline)
@@ -187,6 +188,8 @@ class MultiAgentEnv(object):
             action, prob_action = self.sample2action(action)
             valid, action = self.check_action_validity(index, action, prob_action)
             if valid == False:
+                self.not_vaild += 1
+                print("出现不合格动作")
                 new_valid = False
             new_actions.append(action)
         
@@ -639,3 +642,6 @@ class MultiAgentEnv(object):
     def showActions(self, actions):
         for i, action in enumerate(actions):
             print("agent",i,"动作：",action[0],action[1:num_task+1],action[num_task+1:2*num_task+1],action[2*num_task+1:3*num_task+1],action[-1])
+    
+    def getNotValid(self):
+        return self.not_vaild
