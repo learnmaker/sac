@@ -443,6 +443,7 @@ class MultiAgentEnv(object):
         """
         if not valid:
             # Not do update when the action is not valid
+            print("动作不合格，不更新系统状态")
             return self.sys_states
 
         next_states =  [[0] * len(self.sys_states[0]) for _ in range(self.agent_num)]
@@ -462,6 +463,7 @@ class MultiAgentEnv(object):
 
     # 单个agent
     def check_action_validity(self, agent_i, action, prob_action):
+        # print(action, prob_action)
         """
         Input:
             action: [CR_At, b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks)] 计算核数、主动传输、缓存更新
@@ -502,10 +504,12 @@ class MultiAgentEnv(object):
         dS_I_f_new = [0] * num_task
         dS_O_f_new = [0] * num_task
         # ---------------------数据准备结束-------------------
-
-        # Constraint (2)
-        if I_At * w_At / tau > (CR_At * fD) and S_O_At == 0:
+        # self.showAction(action)
+        
+        # 1. 纠正计算核数 I(At) * w(At) / tau <= C_R(At) * fD
+        if I_At * w_At / tau > (CR_At * fD) and S_O_At == 0: # 没有输出缓存，同时分配计算核数不够
             CR_At = min(math.ceil(I_At * w_At / tau / fD), num_core)
+            # print("分配计算核数不够",CR_At, num_core)
         elif S_O_At == 1:
             CR_At = 0
 
@@ -516,11 +520,11 @@ class MultiAgentEnv(object):
         C_R_f[A_t] = CR_At
         action[0] = int(CR_At)
 
-        # for non-cache solutions
+        # 对于没有缓存的方案，只纠正了计算核数
         if self.no_cache:
             return True, action
 
-        # for heuristic solution
+        # 对于启发式方案
         if self.heuristic:
             if self.exp_case == 'case6':    # MRU cache + LRU replace
                 # cache the input data of most recently used if it has not been cached
@@ -557,6 +561,7 @@ class MultiAgentEnv(object):
         # below are for non-heuristic, SAC solution
         bf_sort_idx = np.argsort(b_f_prob)[::-1] # 从概率大的向概率小的排序
 
+        # 概率最大的主动传输任务 + 输入输出缓存都为0
         if b_f[bf_sort_idx[0]] > 0 and S_I_f[bf_sort_idx[0]] + S_O_f[bf_sort_idx[0]] < 1:
             b_f_new[bf_sort_idx[0]] = 1
 
@@ -574,17 +579,20 @@ class MultiAgentEnv(object):
                 dS_I_f_new[idx] = 1
                 # dS_O_f_new[idx] = 0
 
-        # Constraint (9)
+        # Constraint (9) sum of I(f) * (S_I(f) + dS_I(f)) + O(f) * (S_O(f) +dS_O(f)) <= C
         is_cache_exceed = self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, dS_I_f_new, dS_O_f_new)
 
         # 超过
         if is_cache_exceed:
+            # 优先清理概率最小的
             drop_sort = np.argsort(push_prob)
             for idx in list(drop_sort):
                 if b_f_new[push_idx[idx]] > 0:
                     continue
+                # 存在输入缓存
                 if push_IO_indc[idx] == 0 and S_I_f[push_idx[idx]] > 0:
                     dS_I_f_new[push_idx[idx]] = -1
+                # 存在输出缓存
                 elif push_IO_indc[idx] == 1 and S_O_f[push_idx[idx]] > 0:
                     dS_O_f_new[push_idx[idx]] = -1
                 is_cache_exceed = self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, dS_I_f_new, dS_O_f_new)
@@ -623,6 +631,7 @@ class MultiAgentEnv(object):
         # print(action[1 + num_task:1 + num_task * 2], action[1 + num_task * 2:1 + num_task * 3], self.sys_states)
 
         if self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, action[1+num_task:1+num_task*2], action[1+num_task*2:1+num_task*3]):
+            print("超过缓存容量")
             return False, action
         else:
             return True, action
@@ -631,6 +640,8 @@ class MultiAgentEnv(object):
     def test_cache_exceed(self, I_f, O_f, S_I_f, S_O_f, dS_I_f, dS_O_f):
         sum_cache = np.sum(np.asarray(I_f) * (np.asarray(S_I_f) + np.asarray(dS_I_f)) +
                            np.asarray(O_f) * (np.asarray(S_O_f) + np.asarray(dS_O_f)))
+        # print("需要缓存容量", sum_cache)
+        # print("缓存容量",Cache)
         if sum_cache > Cache:
             is_cache_exceed = True
         else:
@@ -644,6 +655,9 @@ class MultiAgentEnv(object):
     def showActions(self, actions):
         for i, action in enumerate(actions):
             print("agent",i,"动作：",action[0],action[1:num_task+1],action[num_task+1:2*num_task+1],action[2*num_task+1:3*num_task+1],action[-1])
-    
+            
+    def showAction(self, action):
+        print("动作：",action[0],action[1:num_task+1],action[num_task+1:2*num_task+1],action[2*num_task+1:3*num_task+1],action[-1])
+        
     def getNotValid(self):
         return self.not_vaild
