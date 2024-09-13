@@ -361,6 +361,13 @@ if __name__ == '__main__':
                         combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
                         global_info = model.encoder(combined_input).detach().numpy()
                         next_state_comb = get_state_comb(next_states[i], global_info)
+                        # print("states[i]",states[i])
+                        # print("state_comb",state_comb)
+                        # print("actions[i]",actions[i])
+                        # print("rewards[i]",rewards[i])
+                        # print("next_state_comb",next_state_comb)
+                        # print("masks[i]",masks[i])
+                        # print("------------------------------------")
                         memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
                     else:
                         memories[i].push(states[i], actions[i], rewards[i], next_states[i], masks[i])
@@ -369,6 +376,7 @@ if __name__ == '__main__':
                 
             episode_step += 1
             states = next_states
+            print("states",states)
             dones = new_dones
             total_numsteps += 1
            

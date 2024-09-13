@@ -55,7 +55,7 @@ class MultiAgentEnv(object):
         self.task_lists = [[] for _ in range(agent_num)] # 任务列表
         self.popularity = [[0] * num_task for _ in range(agent_num)]
         self.last_use = [[0] * num_task for _ in range(agent_num)]
-
+        
         self.reactive_only = False
         self.no_cache = False
         self.heuristic = False
@@ -188,8 +188,6 @@ class MultiAgentEnv(object):
             action, prob_action = self.sample2action(action)
             valid, action = self.check_action_validity(index, action, prob_action)
             if valid == False:
-                self.not_vaild += 1
-                print("出现不合格动作")
                 new_valid = False
             new_actions.append(action)
         
@@ -426,7 +424,7 @@ class MultiAgentEnv(object):
 
     # 归一化
     def scale_state(self, state):
-        # Scale to [-1, 1]
+        # Scale to [0, 1]
         length = self.observe_high - self.observe_low
         scaled_state = []
         for idx, elem in enumerate(state):
@@ -443,6 +441,7 @@ class MultiAgentEnv(object):
         """
         if not valid:
             # Not do update when the action is not valid
+            self.not_vaild += 1
             print("动作不合格，不更新系统状态")
             return self.sys_states
 
