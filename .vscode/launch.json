@@ -13,7 +13,8 @@
                 "--eval",
                 "--global-info",
                 "--cuda",
-                "--max_episode", "200"
+                "--max_episode", "200",
+                "--start_steps", "0"
             ],
             "justMyCode": false
         }

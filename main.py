@@ -260,12 +260,13 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
-        
         if args.global_info:
             server_requests = torch.FloatTensor(env.get_requests())
             servers_cache_states = torch.FloatTensor(env.get_cach_state())
             combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
             global_info = model.encoder(combined_input).detach().numpy()
+            
+            # print("global_info",global_info)
             
             if args.lstm:
                 h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
@@ -300,7 +301,9 @@ if __name__ == '__main__':
                     else:
                         if args.global_info:
                             state_comb = get_state_comb(state, global_info)
+                            # print("state_comb",state_comb)
                             action = agent.select_action(state_comb)
+                            # print("action",action)
                             
                         else:
                             action = agent.select_action(state)
@@ -376,7 +379,6 @@ if __name__ == '__main__':
                 
             episode_step += 1
             states = next_states
-            print("states",states)
             dones = new_dones
             total_numsteps += 1
            

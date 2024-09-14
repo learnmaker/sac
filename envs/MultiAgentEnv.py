@@ -201,6 +201,7 @@ class MultiAgentEnv(object):
                 dones[i] = True
 
         obs = self.next_state(new_actions, new_valid)
+        # print("next_state",obs)
         self.sys_states = obs    # 更新系统状态
         total_cost_weight = 1
         # reward_ = - observation_ ** 2 / 1e12
@@ -217,7 +218,7 @@ class MultiAgentEnv(object):
         Reset the state of the environment to an initial state
         """
         self.current_step = 0
-        self.global_step -= 1
+        # self.global_step -= 1
         self.sum_Comp = 0
         self.sum_Trans = 0
         self.popularity = [[0] * num_task for _ in range(self.agent_num)]
@@ -226,7 +227,6 @@ class MultiAgentEnv(object):
         for agent_i in range(self.agent_num):
             self.sys_states[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests[0])]
         self.task_lists = [[] for _ in range(self.agent_num)]
-        
         return self.scale_state(self.sys_states)
 
     def render(self, mode='human', close=False):
@@ -424,12 +424,11 @@ class MultiAgentEnv(object):
 
     # 归一化
     def scale_state(self, state):
-        # Scale to [0, 1]
+        # Scale to [-1, 1]
         length = self.observe_high - self.observe_low
         scaled_state = []
         for idx, elem in enumerate(state):
-            scaled_state.append(2 * (elem - self.observe_low[idx]) / length[idx] - 1)
-
+            scaled_state.append(2 * (elem - self.observe_low[idx]) / length - 1)
         return scaled_state
 
     def next_state(self, actions, valid=True):
@@ -660,3 +659,5 @@ class MultiAgentEnv(object):
         
     def getNotValid(self):
         return self.not_vaild
+
+

@@ -14,3 +14,4 @@ python collect_global_info.py --global-info --cuda --max_episode 50
 conda activate sac
 cd /home/guorui/jupyterlab/sac
 
+python main.py --exp-case case5 --no_automatic_entropy_tuning --eval --global-info --cuda --max_episode 150 --start_steps 0
