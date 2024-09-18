@@ -13,17 +13,21 @@ class Autoencoder(nn.Module):
         
         # 编码器
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, 2*hidden_dim),
+            nn.Linear(input_dim, 64),
             nn.ReLU(),
-            nn.Linear(2*hidden_dim, hidden_dim),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, hidden_dim),
             nn.ReLU(),
         )
         
         # 解码器
         self.decoder = nn.Sequential(
-            nn.Linear(hidden_dim, 2*hidden_dim),
+            nn.Linear(hidden_dim, 32),
             nn.ReLU(),
-            nn.Linear(2*hidden_dim, input_dim),
+            nn.Linear(32, 64),
+            nn.ReLU(),
+            nn.Linear(64, input_dim),
             nn.ReLU(),
         )
 
@@ -35,7 +39,7 @@ class Autoencoder(nn.Module):
 if __name__ == "__main__":
     task_num = 8
     agent_num = 6
-    global_info_num = agent_num + agent_num * task_num * 2
+    global_info_num = (2 * task_num + 1) * agent_num
 
     # 准备全局信息数据
     global_info = load_data('./mydata/global_info/encode_data.csv')
@@ -44,7 +48,7 @@ if __name__ == "__main__":
     # 转换为 PyTorch 的张量
     global_info_tensor = torch.tensor(global_info, dtype=torch.float32)
     dataset = TensorDataset(global_info_tensor)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=256, shuffle=True)
 
     # 定义模型、损失函数和优化器
     input_dim = global_info_num  # 全局信息的维度
@@ -54,7 +58,7 @@ if __name__ == "__main__":
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     # 训练自编码器
-    num_epochs = 100
+    num_epochs = 300
     for epoch in range(num_epochs):
         for data in dataloader:
             inputs = data[0]

@@ -57,8 +57,8 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                         help='温度系数 (default: 0.2)')
     # 熵前面的系数是否自动调整
-    parser.add_argument('--no_automatic_entropy_tuning', action='store_false', default=True,
-                        help='α是否自动调整 (default: True)')
+    parser.add_argument('--automatic_entropy_tuning', action='store_true', default=False,
+                        help='α是否自动调整 (default: False)')
     # 随机种子
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='随机种子 (default: 123456)')

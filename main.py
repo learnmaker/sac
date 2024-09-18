@@ -20,17 +20,20 @@ from gym import spaces
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
+# agent编号转服务器、用户设备编号
 def index2ud(index, ud_num):
     server = index // ud_num
     ud = index - server * ud_num
     return server, ud
 
+# 获取最大位数
 def find_max_digit_position(num):
     if num == 0:
         return 1  # 特殊情况：0 的最大位数为 1
     max_digit_position = int(math.log10(abs(num))) + 1
     return max_digit_position
 
+# 设置实验数据保存名称
 def set_fieldnames(agent_num):
     fd1=[]
     fd2=[]
@@ -52,6 +55,7 @@ def set_fieldnames(agent_num):
     data3.append(fd3)
     return
 
+# 添加时间序列
 def add_state_sequence(i, state, global_info):
     state = np.array(state)
     global_info = np.array(global_info)
@@ -63,6 +67,7 @@ def add_state_sequence(i, state, global_info):
         state_sequence[i].append(np.concatenate((state, global_info)))
     return
 
+# 获取时间序列
 def get_state_sequence(i, state_dim):
     current_time_step = len(state_sequence[i])
     # 如果当前时间步少于序列长度，用0填充
@@ -75,12 +80,14 @@ def get_state_sequence(i, state_dim):
     state_sequence_tensor = torch.from_numpy(state_sequence_np).float()
     return  state_sequence_tensor
 
+# 获取状态向量
 def get_state_comb(state, global_info):
     state = torch.FloatTensor(state)
     global_info = torch.FloatTensor(global_info)
     state_comb = torch.cat((state, global_info), dim=0)
     return state_comb
 
+# 展示系统状态
 def show_states(states):
     for index in range(len(states)):
         state = states[index]
@@ -117,7 +124,7 @@ if __name__ == '__main__':
     # 是否使用LSTM
     parser.add_argument('--lstm', action='store_true', default=False,
                         help='是否使用LSTM (default: False)')
-    # 每10次评估一次策略
+    # 是否每10次评估一次策略
     parser.add_argument('--eval', action='store_true', default=False,
                         help='是否评估 (default: False)')
     # 折现因子
@@ -133,14 +140,14 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=0.2, metavar='G',
                         help='温度系数 (default: 0.2)')
     # 熵前面的系数是否自动调整
-    parser.add_argument('--no_automatic_entropy_tuning', action='store_false', default=True,
-                        help='α是否自动调整 (default: True)')
+    parser.add_argument('--automatic_entropy_tuning', action='store_true', default=False,
+                        help='α是否自动调整 (default: False)')
     # 随机种子
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='随机种子 (default: 123456)')
     # 批量大小
     parser.add_argument('--batch_size', type=int, default=512, metavar='N',
-                        help='批量大小 (default: 256)')
+                        help='批量大小 (default: 512)')
     # 最大迭代次数
     parser.add_argument('--max_episode', type=int, default=300, metavar='N',
                         help='最大迭代次数 (default: 300)')
@@ -173,19 +180,19 @@ if __name__ == '__main__':
     # ------------------------------------------------------2. 环境设置-----------------------------------------------------------------------
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
+    
     agent_num = args.server_num * args.ud_num
-    weight = system_config['weight']
+    weight = system_config['weight'] # weight = 1
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
     global_info_size = 16
-    
-    # 设置表头
-    set_fieldnames(agent_num)
-    
     task_num = system_config['F']  # 任务数 8
     maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
+    
+    # 设置表头
+    set_fieldnames(agent_num)
     
     if args.global_info:
         # 保存所有用户设备的任务请求，agent_num，初始化为-1
@@ -260,6 +267,7 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
+        
         if args.global_info:
             server_requests = torch.FloatTensor(env.get_requests())
             servers_cache_states = torch.FloatTensor(env.get_cach_state())

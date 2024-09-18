@@ -256,4 +256,30 @@ class LSTMActorGaussian(nn.Module):
 class LSTMActorDeterministic(nn.Module):
     def __init__(self, num_inputs, num_actions, hidden_dim, action_space=None):
         super(LSTMActorDeterministic, self).__init__()
+
+# 注意力层
+class AttentionLayer(nn.Module):
+    def __init__(self, feature_dim, hidden_dim):
+        super(AttentionLayer, self).__init__()
+        self.W_query = nn.Linear(feature_dim, hidden_dim)
+        self.W_key = nn.Linear(feature_dim, hidden_dim)
+        self.W_value = nn.Linear(feature_dim, hidden_dim)
+        self.sqrt_scalar = np.sqrt(hidden_dim)
+
+    def forward(self, query, keys):
+        # query shape: (batch_size, feature_dim)
+        # keys shape: (batch_size, num_agents - 1, feature_dim)
         
+        # Project queries and keys
+        queries = self.W_query(query).unsqueeze(1)  # (batch_size, 1, hidden_dim)
+        keys = self.W_key(keys)  # (batch_size, num_agents - 1, hidden_dim)
+        
+        # Compute attention scores (scaled dot product attention)
+        attention_scores = torch.bmm(queries, keys.transpose(1, 2)) / self.sqrt_scalar  # (batch_size, 1, num_agents - 1)
+        attention_scores = F.softmax(attention_scores, dim=-1)  # Normalize
+        
+        # Apply attention to values
+        values = self.W_value(keys)  # (batch_size, num_agents - 1, hidden_dim)
+        weighted_values = torch.bmm(attention_scores, values)  # (batch_size, 1, hidden_dim)
+        
+        return weighted_values.squeeze(1)  # Remove batch dimension

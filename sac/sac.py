@@ -8,14 +8,14 @@ from sac.model import GaussianPolicy, QNetwork, DeterministicPolicy, LSTMCritic,
 
 
 class SAC(object):
-    def __init__(self, num_inputs, action_space, args):
+    def __init__(self, local_dim, global_dim, action_space, args):
 
         self.gamma = args.gamma # 折扣因子
         self.tau = args.tau # 目标网络软更新的混合系数
         self.alpha = args.alpha # 控制策略熵的权重，用于平衡探索和利用
         self.actor_type = args.policy # 策略类型
         self.target_update_interval = args.target_update_interval # 更新目标网络频率
-        self.automatic_entropy_tuning = not args.no_automatic_entropy_tuning # 是否自动调整熵的权重
+        self.automatic_entropy_tuning = args.automatic_entropy_tuning # 是否自动调整熵的权重
         self.LSTM = args.lstm
         self.global_info = args.global_info
         self.hidden_dim = args.hidden_size
@@ -54,9 +54,9 @@ class SAC(object):
                 hard_update(self.actor_target, self.actor)
                 print("actor使用LSTMActorGaussian网络")
             else:
-                self.actor = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+                # self.actor = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+                self.actor = GaussianPolicy(local_dim, global_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-                
                 self.actor_target = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
                 hard_update(self.actor_target, self.actor)
                 print("actor使用GaussianPolicy网络")
