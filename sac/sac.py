@@ -71,7 +71,7 @@ class SAC(object):
     
     
 
-    def update_parameters(self, memory, batch_size, updates, mold):
+    def update_parameters(self, index, memory, batch_size, updates, mold):
         # 状态、动作、奖励、下一状态、是否结束
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
@@ -86,6 +86,7 @@ class SAC(object):
             if mold == 3:
                 next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, next_state_batch)
             elif mold == 2:
+                next_local_state = next_state_batch[:,index,:]
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
             else:
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)

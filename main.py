@@ -307,7 +307,7 @@ if __name__ == '__main__':
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
-                            memories[index], args.batch_size, updates, mold)
+                            index, memories[index], args.batch_size, updates, mold)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
@@ -340,9 +340,7 @@ if __name__ == '__main__':
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
                     if args.global_info:
-                        local_state = states[i]
-                        global_state = states[np.arange(states.shape[0]) != i]
-                        memories[i].push(local_state, global_state, actions[i], rewards[i], next_states[i], masks[i])
+                        memories[i].push(states, actions[i], rewards[i], next_states, masks[i])
                     else:
                         memories[i].push(states[i], actions[i], rewards[i], next_states[i], masks[i])
                     
