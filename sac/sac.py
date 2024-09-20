@@ -1,14 +1,15 @@
 import os
 import sys
+import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.optim import Adam
 from sac.utils import soft_update, hard_update
-from sac.model import GaussianPolicy, QNetwork, DeterministicPolicy, LSTMCritic, LSTMActorGaussian, LSTMActorDeterministic
+from sac.model import Critic, GaussianActor, DeterministicActor
 
 
 class SAC(object):
-    def __init__(self, local_dim, global_dim, action_space, args):
+    def __init__(self, local_dim, action_space, args):
 
         self.gamma = args.gamma # 折扣因子
         self.tau = args.tau # 目标网络软更新的混合系数
@@ -16,26 +17,17 @@ class SAC(object):
         self.actor_type = args.policy # 策略类型
         self.target_update_interval = args.target_update_interval # 更新目标网络频率
         self.automatic_entropy_tuning = args.automatic_entropy_tuning # 是否自动调整熵的权重
+        self.agent_num = args.server_num * args.ud_num
         self.LSTM = args.lstm
         self.global_info = args.global_info
         self.hidden_dim = args.hidden_size
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
         # critic网络
-        if self.LSTM:
-            self.critic = LSTMCritic(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-            self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
-            
-            self.critic_target = LSTMCritic(num_inputs, action_space.shape[0], args.hidden_size).to(self.device)
-            hard_update(self.critic_target, self.critic)
-            print("critic使用LSTMCritic网络")
-        else:
-            self.critic = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(device=self.device) # 主Q网络，用于评估状态-动作对的价值
-            self.critic_optim = Adam(self.critic.parameters(), lr=args.lr) # Q网络的优化器，使用Adam优化算法
-            
-            self.critic_target = QNetwork(num_inputs, action_space.shape[0], args.hidden_size).to(self.device) # 目标Q网络，用于稳定学习过程，减少训练波动
-            hard_update(self.critic_target, self.critic) # 初始时，目标网络的权重被硬拷贝（完全复制）自主网络的权重
-            print("critic使用QNetwork网络")
+        self.critic = Critic(local_dim, action_space.shape[0], args.hidden_size).to(self.device)
+        self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
+        self.critic_target = Critic(local_dim, action_space.shape[0], args.hidden_size).to(self.device)
+        hard_update(self.critic_target, self.critic)
 
         # actor网络
         if self.actor_type == "Gaussian":
@@ -45,57 +37,41 @@ class SAC(object):
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
                 
-            # 策略网络（actor）state-->action
-            if self.LSTM:
-                self.actor = LSTMActorGaussian(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-                
-                self.actor_target = LSTMActorGaussian(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                hard_update(self.actor_target, self.actor)
-                print("actor使用LSTMActorGaussian网络")
-            else:
-                # self.actor = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                self.actor = GaussianPolicy(local_dim, global_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-                self.actor_target = GaussianPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                hard_update(self.actor_target, self.actor)
-                print("actor使用GaussianPolicy网络")
+            self.actor = GaussianActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
+            self.actor_target = GaussianActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            hard_update(self.actor_target, self.actor)
+            print("actor使用GaussianActor网络")
 
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
+            self.actor = DeterministicActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
+            self.actor_target = DeterministicActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            hard_update(self.actor_target, self.actor)
+            print("actor使用DeterministicActor网络")
             
-            # 策略网络
-            if self.LSTM:
-                self.actor = LSTMActorDeterministic(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-                
-                self.actor_target = LSTMActorDeterministic(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                hard_update(self.actor_target, self.actor)
-                print("actor使用LSTMActorDeterministic网络")
-            else:
-                self.actor = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-                
-                self.actor_target = DeterministicPolicy(num_inputs, action_space.shape[0], args.hidden_size, action_space).to(self.device)
-                hard_update(self.actor_target, self.actor)
-                print("actor使用DeterministicPolicy网络")
-
-    def select_action_lstm(self, state_sequence, h_c):
+    def select_action(self, state):
+        state = torch.FloatTensor(state).to(self.device)
+        action, _, _ = self.actor.sample(1, state)
+        return action.detach().cpu().numpy()
+        
+    def select_action_info(self, i, states):
+        local_state = states[i]
+        global_state = states[np.arange(states.shape[0]) != i]
+        self.actor.sample(2, local_state, global_state)
+        
+    def select_action_lstm(self, i, states, state_sequence, h_c):
+        local_state = states[i]
+        global_state = states[np.arange(states.shape[0]) != i]
         state_sequence = state_sequence.to(self.device)
-        action, _, _, h_c = self.actor.sample(state_sequence.unsqueeze(0), h_c)
+        action, _, _, h_c = self.actor.sample(3, local_state, global_state, state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
-    def select_action(self, state):
-        if self.global_info:
-            state_comb = state.to(self.device)
-            action, _, _ = self.actor.sample(state_comb)
-        else:
-            state = torch.FloatTensor(state).to(self.device)
-            action, _, _ = self.actor.sample(state)
-        return action.detach().cpu().numpy()
     
-    def update_parameters(self, memory, batch_size, updates, lstm):
+
+    def update_parameters(self, memory, batch_size, updates, mold):
         # 状态、动作、奖励、下一状态、是否结束
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
 
@@ -107,10 +83,12 @@ class SAC(object):
         
         # 计算next_q_value
         with torch.no_grad():
-            if lstm:
-                next_action_target, log_pi_target, _, _ = self.actor_target.sample(next_state_batch)
+            if mold == 3:
+                next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, next_state_batch)
+            elif mold == 2:
+                next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
             else:
-                next_action_target, log_pi_target, _ = self.actor_target.sample(next_state_batch)
+                next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
 
             qf1_target, qf2_target = self.critic_target(next_state_batch, next_action_target)
             min_qf_target = torch.min(qf1_target, qf2_target) - self.alpha * log_pi_target

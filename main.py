@@ -56,23 +56,23 @@ def set_fieldnames(agent_num):
     return
 
 # 添加时间序列
-def add_state_sequence(i, state, global_info):
-    state = np.array(state)
-    global_info = np.array(global_info)
+def add_state_sequence(i, local_state, global_state):
+    local_state = np.array(local_state)
+    global_state = np.array(global_state)
     
     if len(state_sequence[i]) < sequence_length:
-        state_sequence[i].append(np.concatenate((state, global_info)))
+        state_sequence[i].append(np.concatenate((local_state, global_state)))
     else:
         state_sequence[i] = state_sequence[i][1:]
-        state_sequence[i].append(np.concatenate((state, global_info)))
+        state_sequence[i].append(np.concatenate((local_state, global_state)))
     return
 
 # 获取时间序列
 def get_state_sequence(i, state_dim):
-    current_time_step = len(state_sequence[i])
+    current_length = len(state_sequence[i])
     # 如果当前时间步少于序列长度，用0填充
-    if current_time_step < sequence_length:
-        padding = [np.zeros(state_dim) for _ in range(sequence_length - current_time_step)]
+    if current_length < sequence_length:
+        padding = [np.zeros(state_dim) for _ in range(sequence_length - current_length)]
         state_sequence_new = padding + state_sequence[i]
     else:
         state_sequence_new = state_sequence[i]
@@ -185,11 +185,17 @@ if __name__ == '__main__':
     weight = system_config['weight'] # weight = 1
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
-    global_info_size = 16
     task_num = system_config['F']  # 任务数 8
     maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
+    
+    if args.lstm:
+        mold = 3
+    elif args.global_info:
+        mold = 2
+    else:
+        mold = 1
     
     # 设置表头
     set_fieldnames(agent_num)
@@ -222,11 +228,7 @@ if __name__ == '__main__':
     sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
     sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
-    
-    if args.global_info:
-        state_dim = 2*task_num+1 + global_info_size
-    else:
-        state_dim = 2*task_num+1
+    local_dim = 2*task_num+1
     
     for server in range(args.server_num):
         # 该服务器的信噪比
@@ -237,7 +239,7 @@ if __name__ == '__main__':
             Ats.append(At)
             snrs.append(snr)
             # 该用户设备的SAC网络
-            agent = SAC(state_dim, action_space, args)
+            agent = SAC(local_dim, action_space, args)
             agents.append(agent)
         
     # 系统状态[S^I, S^O, A(0)]、任务信息、任务请求、信噪比、策略类型       
@@ -255,32 +257,14 @@ if __name__ == '__main__':
     result_trans = []  # 保存传输消耗评估结果
     result_comp = []  # 保存计算消耗评估结果
     
-    # 加载训练好的模型
-    if args.global_info:
-        model = Autoencoder(server_requests.size + servers_cache_states.size, global_info_size)
-        model.load_state_dict(torch.load('autoencoder.pth'))
-        model.eval()  # 设置为评估模式
-    
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
         # 初始化
         episode_rewards = np.full(agent_num, 0.)
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
-        
-        if args.global_info:
-            server_requests = torch.FloatTensor(env.get_requests())
-            servers_cache_states = torch.FloatTensor(env.get_cach_state())
-            combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-            global_info = model.encoder(combined_input).detach().numpy()
-            
-            # print("global_info",global_info)
-            
-            if args.lstm:
-                h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
-                for i in range(agent_num):
-                    state = states[i]
-                    add_state_sequence(i, state, global_info)
+        if args.lstm:
+            h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
             
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
@@ -304,15 +288,11 @@ if __name__ == '__main__':
                     action = env.action_space.sample()  # 随机动作
                 else:
                     if args.lstm:
-                        state_seq = get_state_sequence(index, state_dim)
+                        state_seq = get_state_sequence(index, local_dim)
                         action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                     else:
                         if args.global_info:
-                            state_comb = get_state_comb(state, global_info)
-                            # print("state_comb",state_comb)
-                            action = agent.select_action(state_comb)
-                            # print("action",action)
-                            
+                            action = agent.select_action_info(index, states)
                         else:
                             action = agent.select_action(state)
 
@@ -327,7 +307,7 @@ if __name__ == '__main__':
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
-                            memories[index], args.batch_size, updates, args.lstm)
+                            memories[index], args.batch_size, updates, mold)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
@@ -350,36 +330,19 @@ if __name__ == '__main__':
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
             
-            # show_states(states)
-            # env.show_actions(actions)
-            # sys.exit()
-            
+            # 经验缓存
             for i in range(agent_num):
                 if args.lstm:
-                    state_seq = get_state_sequence(i, state_dim)
-                    server_requests = torch.FloatTensor(env.get_requests())
-                    servers_cache_states = torch.FloatTensor(env.get_cach_state())
-                    combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-                    global_info = model.encoder(combined_input).detach().numpy()
-                    add_state_sequence(i, next_states[i], global_info)
-                    next_state_seq = get_state_sequence(i, state_dim)
+                    local_state = states[i]
+                    global_state = states[np.arange(states.shape[0]) != i]
+                    add_state_sequence(i, local_state, global_state)
+                    next_state_seq = get_state_sequence(i, local_dim)
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
                     if args.global_info:
-                        state_comb = get_state_comb(states[i], global_info)
-                        server_requests = torch.FloatTensor(env.get_requests())
-                        servers_cache_states = torch.FloatTensor(env.get_cach_state())
-                        combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-                        global_info = model.encoder(combined_input).detach().numpy()
-                        next_state_comb = get_state_comb(next_states[i], global_info)
-                        # print("states[i]",states[i])
-                        # print("state_comb",state_comb)
-                        # print("actions[i]",actions[i])
-                        # print("rewards[i]",rewards[i])
-                        # print("next_state_comb",next_state_comb)
-                        # print("masks[i]",masks[i])
-                        # print("------------------------------------")
-                        memories[i].push(state_comb, actions[i], rewards[i], next_state_comb, masks[i])
+                        local_state = states[i]
+                        global_state = states[np.arange(states.shape[0]) != i]
+                        memories[i].push(local_state, global_state, actions[i], rewards[i], next_states[i], masks[i])
                     else:
                         memories[i].push(states[i], actions[i], rewards[i], next_states[i], masks[i])
                     
