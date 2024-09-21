@@ -56,15 +56,15 @@ def set_fieldnames(agent_num):
     return
 
 # 添加时间序列
-def add_state_sequence(i, local_state, global_state):
+def add_state_sequence(i, states):
     local_state = np.array(local_state)
     global_state = np.array(global_state)
     
     if len(state_sequence[i]) < sequence_length:
-        state_sequence[i].append(np.concatenate((local_state, global_state)))
+        state_sequence[i].append(states)
     else:
         state_sequence[i] = state_sequence[i][1:]
-        state_sequence[i].append(np.concatenate((local_state, global_state)))
+        state_sequence[i].append(states)
     return
 
 # 获取时间序列
@@ -306,21 +306,18 @@ if __name__ == '__main__':
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
-                        critic_1_loss, critic_2_loss, policy_loss, ent_loss, alpha = agent.update_parameters(
+                        critic_loss, actor_loss, ent_loss, alpha = agent.update_parameters(
                             index, memories[index], args.batch_size, updates, mold)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
-                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'loss/critic_2', critic_2_loss, updates)
+                            ud_index+1)+'_loss/critic', critic_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
-                                        str(ud_index+1)+'loss/policy', policy_loss, updates)
+                                        str(ud_index+1)+'loss/actor', actor_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'loss/entropy_loss', ent_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'entropy_temprature/alpha', alpha, updates)
-                        temp_data1.append(critic_1_loss)
-                        temp_data1.append(critic_2_loss)
-                        temp_data1.append(policy_loss)
+                        temp_data1.append(critic_loss)
+                        temp_data1.append(actor_loss)
                         temp_data1.append(ent_loss)
                         temp_data1.append(alpha)
                         updates += 1
@@ -333,9 +330,7 @@ if __name__ == '__main__':
             # 经验缓存
             for i in range(agent_num):
                 if args.lstm:
-                    local_state = states[i]
-                    global_state = states[np.arange(states.shape[0]) != i]
-                    add_state_sequence(i, local_state, global_state)
+                    add_state_sequence(i, states)
                     next_state_seq = get_state_sequence(i, local_dim)
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
@@ -382,15 +377,8 @@ if __name__ == '__main__':
                 states = env.reset()
                 dones = np.full(agent_num, False)
                 if args.global_info:
-                    server_requests = torch.FloatTensor(env.get_requests())
-                    servers_cache_states = torch.FloatTensor(env.get_cach_state())
-                    combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-                    global_info = model.encoder(combined_input).detach().numpy()
                     if args.lstm:
                         h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
-                        for i in range(agent_num):
-                            state = states[i]
-                            add_state_sequence(i, state, global_info)
                         
                 while np.sum(dones == False) > 0:
                     
@@ -405,26 +393,19 @@ if __name__ == '__main__':
                         agent = agents[index]
                         state = states[index]
                         if args.lstm:
-                            state_seq = get_state_sequence(index, state_dim)
+                            state_seq = get_state_sequence(index, local_dim)
                             action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
                         else:
                             if args.global_info:
-                                state_comb = get_state_comb(state, global_info)
-                                action = agent.select_action(state_comb)
+                                action = agent.select_action_info(index, states)
                             else:
                                 action = agent.select_action(state)
                         actions.append(action)
                         
                     next_states, rewards, new_dones, infos = env.step(actions)
-                    # 执行动作后，立刻更新任务缓存
-                    if args.global_info:
-                        server_requests = torch.FloatTensor(env.get_requests())
-                        servers_cache_states = torch.FloatTensor(env.get_cach_state())
-                        combined_input = torch.cat((server_requests, servers_cache_states.flatten()), dim=0)
-                        global_info = model.encoder(combined_input).detach().numpy()
-                        if args.lstm:
-                            for i in range(agent_num):
-                                add_state_sequence(i, next_states[i], global_info)
+                    if args.lstm:
+                        for i in range(agent_num):
+                            add_state_sequence(i, states)
                             
                     episode_reward += np.sum(rewards)
                         

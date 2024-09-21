@@ -24,7 +24,7 @@ class SAC(object):
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
         # critic网络
-        self.critic = Critic(local_dim, action_space.shape[0], args.hidden_size).to(self.device)
+        self.critic = Critic(local_dim, local_dim*(self.agent_num-1), action_space.shape[0], args.hidden_size).to(self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
         self.critic_target = Critic(local_dim, action_space.shape[0], args.hidden_size).to(self.device)
         hard_update(self.critic_target, self.critic)
@@ -60,7 +60,8 @@ class SAC(object):
     def select_action_info(self, i, states):
         local_state = states[i]
         global_state = states[np.arange(states.shape[0]) != i]
-        self.actor.sample(2, local_state, global_state)
+        action, _, _ = self.actor.sample(2, local_state, global_state)
+        return action.detach().cpu().numpy()
         
     def select_action_lstm(self, i, states, state_sequence, h_c):
         local_state = states[i]
@@ -87,33 +88,38 @@ class SAC(object):
                 next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, next_state_batch)
             elif mold == 2:
                 next_local_state = next_state_batch[:,index,:]
-                next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
+                all_indices = torch.arange(next_state_batch.size(1))
+                remaining_indices = all_indices[all_indices != index]
+                next_global_state = next_state_batch[:, remaining_indices, :]
+                next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
             else:
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
 
-            qf1_target, qf2_target = self.critic_target(next_state_batch, next_action_target)
-            min_qf_target = torch.min(qf1_target, qf2_target) - self.alpha * log_pi_target
-            next_q_value = reward_batch + mask_batch * self.gamma * (min_qf_target)
-        
-        
+            qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
+            next_q_value = reward_batch + mask_batch * self.gamma * (qf_target)
+
         # 更新critic
-        qf1, qf2 = self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
-        qf1_loss = F.mse_loss(qf1, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
-        qf2_loss = F.mse_loss(qf2, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
-        qf_loss = qf1_loss + qf2_loss
+        qf= self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
+        qf_loss = F.mse_loss(qf, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
 
         self.critic_optim.zero_grad()
         qf_loss.backward()
         self.critic_optim.step()
 
         # 更新actor
-        if lstm:
+        if mold == 3:
             pi, log_pi, _, _ = self.actor.sample(state_batch)
+        elif mold == 2:
+            local_state = state_batch[:,index,:]
+            all_indices = torch.arange(state_batch.size(1))
+            remaining_indices = all_indices[all_indices != index]
+            global_state = state_batch[:, remaining_indices, :]
+            pi, log_pi, _, _ = self.actor.sample(mold, local_state, global_state)
         else:
-            pi, log_pi, _ = self.actor.sample(state_batch)
-        qf1_pi, qf2_pi = self.critic(state_batch, pi)
-        min_qf_pi = torch.min(qf1_pi, qf2_pi)
-        actor_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
+            pi, log_pi, _ = self.actor.sample(mold, state_batch)
+            
+        qf_pi = self.critic(state_batch, pi)
+        actor_loss = ((self.alpha * log_pi) - qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         self.actor_optim.zero_grad()
         actor_loss.backward()
         self.actor_optim.step()
@@ -141,7 +147,7 @@ class SAC(object):
             soft_update(self.critic_target, self.critic, self.tau)
         # print("alpha_tlogs",alpha_tlogs)
         # critic损失、actor损失、温度参数α的损失和温度参数α的值
-        return qf1_loss.item(), qf2_loss.item(), actor_loss.item(), alpha_loss.item(), alpha_tlogs.item()
+        return qf_loss.item(), actor_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     # Save model parameters
     def save_checkpoint(self, env_name, suffix="", ckpt_path=None):
