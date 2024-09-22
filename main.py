@@ -40,8 +40,7 @@ def set_fieldnames(agent_num):
     for index in range(agent_num):
         server_index, ud_index = index2ud(index, args.ud_num)
         
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_1')
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_2')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/policy')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/entropy_loss')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'/alpha')
