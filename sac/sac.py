@@ -106,9 +106,8 @@ class SAC(object):
         elif mold == 2:
             qf= self.critic.forward_info(next_local_state, next_global_state, action_batch)
         else:
-            qf= self.critic.forward(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
+            qf= self.critic.forward(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step           
         qf_loss = F.mse_loss(qf, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
-
         self.critic_optim.zero_grad()
         qf_loss.backward()
         self.critic_optim.step()
@@ -128,7 +127,6 @@ class SAC(object):
             pi, log_pi, _ = self.actor.sample(mold, state_batch)
             qf_pi = self.critic(state_batch, pi)
             
-        
         actor_loss = ((self.alpha * log_pi) - qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         self.actor_optim.zero_grad()
         actor_loss.backward()
