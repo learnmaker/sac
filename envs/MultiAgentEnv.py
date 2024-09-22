@@ -176,7 +176,7 @@ class MultiAgentEnv(object):
         obs = self.next_state(new_actions, new_valid)
         # print("next_state",obs)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 1
+        total_cost_weight = 0.5
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
             rewards = - (total_cost_weight * sum(observation + prize) + (1-total_cost_weight) * (observation)) / 1e6
@@ -310,7 +310,7 @@ class MultiAgentEnv(object):
                         local = False
                     if flag:
                         total_prize[offload_agent] += 99999
-                        # print("无法得到卸载反馈结果，+99999")
+                        # print("卸载对象任务已满，无法得到卸载反馈结果，+99999")
                         continue
                     
                     E_R=0
@@ -335,6 +335,7 @@ class MultiAgentEnv(object):
                         if C_time[agent_i] >= tau:
                             # 惩罚卸载用户
                             total_prize[offload_agent] += 99999
+                            # print("卸载对象任务溢出，+99999")
                             C_time[agent_i] -= I_At * w_At / (C_R_At * fD)
                             flag = True
                             continue

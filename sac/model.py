@@ -37,20 +37,20 @@ class ValueNetwork(nn.Module):
 
 # ----------------------------------------------------------------critic网络--------------------------------------------------------------
 class Critic(nn.Module):
-    def __init__(self, local_dim, global_dim, action_dim, hidden_dim):
+    def __init__(self, local_dim, action_dim, hidden_dim):
         super(Critic, self).__init__()
 
         # 处理state
         self.local_fc = nn.Linear(local_dim, hidden_dim)
         self.lstm = nn.LSTM(local_dim, hidden_dim)
         # 处理global_states
-        self.global_attention = AttentionLayer(global_dim, hidden_dim)
+        self.global_attention = AttentionLayer(local_dim, hidden_dim)
         # 处理action
         self.action_fc = nn.Linear(action_dim, hidden_dim)
         
         self.fc = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(hidden_dim + action_dim, hidden_dim),
+            nn.Linear(local_dim + action_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
@@ -80,36 +80,35 @@ class Critic(nn.Module):
         return self.fc(concatenated)
         
     def forward_info(self, local_state, global_states, action):
-        local_state = self.local_fc(local_state)
         attn_features = self.global_attention(local_state, global_states)
+        local_state = self.local_fc(local_state)
         action = self.action_fc(action)
         concatenated = torch.cat((local_state, attn_features, action), dim=1)
-        return self.fc(concatenated)
+        return self.fc_info(concatenated)
     
     def forward_lstm(self, local_state, hidden, global_states, action):
         lstm_out, _ = self.lstm(local_state, hidden)
         attn_features = self.global_attention(lstm_out, global_states)
         action = self.action_fc(action)
         concatenated = torch.cat((lstm_out[:, -1, :], attn_features, action), dim=1)
-        return self.fc(concatenated)
+        return self.fc_lstm(concatenated)
     
 # ----------------------------------------------------------------actor网络--------------------------------------------------------------
 class GaussianActor(nn.Module):
-    def __init__(self, local_dim, global_dim, hidden_dim, action_space):
+    def __init__(self, local_dim, hidden_dim, action_space):
         super(GaussianActor, self).__init__()
         action_dim = action_space.shape[0]
-        
         # 处理state
         self.local_fc = nn.Linear(local_dim, hidden_dim)
         self.lstm = nn.LSTM(local_dim, hidden_dim)
         # 处理global_states
-        self.global_attention = AttentionLayer(global_dim, hidden_dim)
+        self.global_attention = AttentionLayer(local_dim, hidden_dim)
         # 处理action
         self.action_fc = nn.Linear(action_dim, hidden_dim)
         
         self.fc = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(local_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
@@ -155,8 +154,8 @@ class GaussianActor(nn.Module):
         return mean, log_std
     
     def forward_info(self, local_state, global_states):
-        local_state = self.local_fc(local_state)
         attn_features = self.global_attention(local_state, global_states)
+        local_state = self.local_fc(local_state)
         concatenated = torch.cat((local_state, attn_features), dim=1)
         x = self.fc_info(concatenated)
         mean = self.mean_linear(x)
@@ -206,9 +205,10 @@ class GaussianActor(nn.Module):
 
 
 class DeterministicActor(nn.Module):
-    def __init__(self, local_dim, global_dim, hidden_dim, action_space):
+    def __init__(self, local_dim, agent_num, hidden_dim, action_space):
         super(DeterministicActor, self).__init__()
         action_dim = action_space.shape[0]
+        global_dim = local_dim * (agent_num-1)
         
         # 处理state
         self.local_fc = nn.Linear(local_dim, hidden_dim)
@@ -220,7 +220,7 @@ class DeterministicActor(nn.Module):
         
         self.fc = nn.Sequential(
             nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(local_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
@@ -288,17 +288,16 @@ class DeterministicActor(nn.Module):
 
 # 注意力层
 class AttentionLayer(nn.Module):
-    def __init__(self, feature_dim, hidden_dim):
+    def __init__(self, feature_dim, hidden_dim = 64):
         super(AttentionLayer, self).__init__()
         self.W_query = nn.Linear(feature_dim, hidden_dim)
         self.W_key = nn.Linear(feature_dim, hidden_dim)
-        self.W_value = nn.Linear(feature_dim, hidden_dim)
+        self.W_value = nn.Linear(hidden_dim, hidden_dim)
         self.sqrt_scalar = np.sqrt(hidden_dim)
 
     def forward(self, query, keys):
         # query shape: (batch_size, feature_dim)
         # keys shape: (batch_size, num_agents - 1, feature_dim)
-        
         # Project queries and keys
         queries = self.W_query(query).unsqueeze(1)  # (batch_size, 1, hidden_dim)
         keys = self.W_key(keys)  # (batch_size, num_agents - 1, hidden_dim)

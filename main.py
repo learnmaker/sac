@@ -7,7 +7,6 @@ import itertools
 import torch
 import sys
 import csv
-from autoencoder import Autoencoder
 from sac.sac import SAC
 from tool.generate_snrs import generate_snrs
 from tool.samples_from_transmat import generate_request
@@ -80,13 +79,6 @@ def get_state_sequence(i, state_dim):
     state_sequence_tensor = torch.from_numpy(state_sequence_np).float()
     return  state_sequence_tensor
 
-# 获取状态向量
-def get_state_comb(state, global_info):
-    state = torch.FloatTensor(state)
-    global_info = torch.FloatTensor(global_info)
-    state_comb = torch.cat((state, global_info), dim=0)
-    return state_comb
-
 # 展示系统状态
 def show_states(states):
     for index in range(len(states)):
@@ -146,7 +138,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='随机种子 (default: 123456)')
     # 批量大小
-    parser.add_argument('--batch_size', type=int, default=512, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='批量大小 (default: 512)')
     # 最大迭代次数
     parser.add_argument('--max_episode', type=int, default=300, metavar='N',
@@ -361,13 +353,13 @@ if __name__ == '__main__':
         data2.append(temp_data2)
         
         # 评估
-        eval_freq = 5  # 评估频率
+        eval_freq = 3  # 评估频率
         if i_episode % eval_freq == 0 and args.eval:
             
             avg_reward = 0
             avg_trans_cost = 0
             avg_compute_cost = 0
-            episodes = 5  # 取5次的平均值，计算网络的奖励
+            episodes = 3  # 取5次的平均值，计算网络的奖励
             done_step = 0
             
             for _ in range(episodes):

@@ -24,7 +24,7 @@ class SAC(object):
         self.device = torch.device("cuda" if args.cuda else "cpu")
 
         # critic网络
-        self.critic = Critic(local_dim, local_dim*(self.agent_num-1), action_space.shape[0], args.hidden_size).to(self.device)
+        self.critic = Critic(local_dim, action_space.shape[0], args.hidden_size).to(self.device)
         self.critic_optim = Adam(self.critic.parameters(), lr=args.lr)
         self.critic_target = Critic(local_dim, action_space.shape[0], args.hidden_size).to(self.device)
         hard_update(self.critic_target, self.critic)
@@ -37,35 +37,35 @@ class SAC(object):
                 self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
                 self.alpha_optim = Adam([self.log_alpha], lr=args.lr)
                 
-            self.actor = GaussianActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.actor = GaussianActor(local_dim, args.hidden_size, action_space).to(self.device)
             self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-            self.actor_target = GaussianActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.actor_target = GaussianActor(local_dim, args.hidden_size, action_space).to(self.device)
             hard_update(self.actor_target, self.actor)
-            print("actor使用GaussianActor网络")
 
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
-            self.actor = DeterministicActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.actor = DeterministicActor(local_dim, args.hidden_size, action_space).to(self.device)
             self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-            self.actor_target = DeterministicActor(local_dim, action_space.shape[0], args.hidden_size, action_space).to(self.device)
+            self.actor_target = DeterministicActor(local_dim, args.hidden_size, action_space).to(self.device)
             hard_update(self.actor_target, self.actor)
-            print("actor使用DeterministicActor网络")
             
     def select_action(self, state):
-        state = torch.FloatTensor(state).to(self.device)
+        state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
         action, _, _ = self.actor.sample(1, state)
-        return action.detach().cpu().numpy()
+        return action.detach().cpu().numpy()[0]
         
     def select_action_info(self, i, states):
-        local_state = states[i]
-        global_state = states[np.arange(states.shape[0]) != i]
+        states = torch.FloatTensor(np.array(states)).to(self.device)
+        local_state = states[i].unsqueeze(0)
+        global_state = states[torch.arange(states.shape[0]) != i].unsqueeze(0)
         action, _, _ = self.actor.sample(2, local_state, global_state)
-        return action.detach().cpu().numpy()
+        return action.detach().cpu().numpy()[0]
         
     def select_action_lstm(self, i, states, state_sequence, h_c):
-        local_state = states[i]
-        global_state = states[np.arange(states.shape[0]) != i]
+        states = torch.FloatTensor(np.array(states)).to(self.device)
+        local_state = states[i].unsqueeze(0)
+        global_state = states[torch.arange(states.shape[0]) != i].unsqueeze(0)
         state_sequence = state_sequence.to(self.device)
         action, _, _, h_c = self.actor.sample(3, local_state, global_state, state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
@@ -86,20 +86,27 @@ class SAC(object):
         with torch.no_grad():
             if mold == 3:
                 next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, next_state_batch)
+                qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
             elif mold == 2:
                 next_local_state = next_state_batch[:,index,:]
                 all_indices = torch.arange(next_state_batch.size(1))
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
+                qf_target = self.critic_target(next_local_state, next_action_target) - self.alpha * log_pi_target
             else:
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
+                qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
 
-            qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
             next_q_value = reward_batch + mask_batch * self.gamma * (qf_target)
 
         # 更新critic
-        qf= self.critic(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
+        if mold == 3:
+            qf= self.critic.forward_lstm(state_batch, action_batch)
+        elif mold == 2:
+            qf= self.critic.forward_info(next_local_state, next_global_state, action_batch)
+        else:
+            qf= self.critic.forward(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step
         qf_loss = F.mse_loss(qf, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
 
         self.critic_optim.zero_grad()
@@ -109,16 +116,19 @@ class SAC(object):
         # 更新actor
         if mold == 3:
             pi, log_pi, _, _ = self.actor.sample(state_batch)
+            qf_pi = self.critic(state_batch, pi)
         elif mold == 2:
             local_state = state_batch[:,index,:]
             all_indices = torch.arange(state_batch.size(1))
             remaining_indices = all_indices[all_indices != index]
             global_state = state_batch[:, remaining_indices, :]
-            pi, log_pi, _, _ = self.actor.sample(mold, local_state, global_state)
+            pi, log_pi, _ = self.actor.sample(mold, local_state, global_state)
+            qf_pi = self.critic(local_state, pi)
         else:
             pi, log_pi, _ = self.actor.sample(mold, state_batch)
+            qf_pi = self.critic(state_batch, pi)
             
-        qf_pi = self.critic(state_batch, pi)
+        
         actor_loss = ((self.alpha * log_pi) - qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
         self.actor_optim.zero_grad()
         actor_loss.backward()
