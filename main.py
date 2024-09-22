@@ -115,7 +115,7 @@ if __name__ == '__main__':
     # 是否使用LSTM
     parser.add_argument('--lstm', action='store_true', default=False,
                         help='是否使用LSTM (default: False)')
-    # 是否每10次评估一次策略
+    # 是否评估策略
     parser.add_argument('--eval', action='store_true', default=False,
                         help='是否评估 (default: False)')
     # 折现因子

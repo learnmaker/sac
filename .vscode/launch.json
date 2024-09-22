@@ -9,7 +9,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--exp-case", "case5",
-                "--no_automatic_entropy_tuning",
+                "--automatic_entropy_tuning",
                 "--eval",
                 "--global-info",
                 "--cuda",

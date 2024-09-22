@@ -124,28 +124,6 @@ class MultiAgentEnv(object):
             # fixed computing cores
             self.action_low = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1])
             self.action_high = np.asarray([int(num_core * 3 / 4)] + [0]*num_task + [0]*num_task*2 + [-1])
-    
-    def get_requests(self):
-        return [row[-1] for row in self.sys_states]
-    
-    def get_cach_state(self):
-        return [[row[i] for i in range(len(row) - 1)] for row in self.sys_states]
-    
-    def get_last_use(self):
-        return self.last_use
-    
-    def show_detail2(self, detail2):
-        print("被动传输消耗, 主动传输消耗, 被动计算消耗, 主动计算消耗")
-        detail2 = np.column_stack(detail2)
-        for i in range(self.agent_num):
-            print("agent",i,detail2[i])
-            
-    def show_actions(self, actions):
-        for index in range(self.agent_num):
-            action = actions[index]
-            action, prob_action = self.sample2action(action)
-            print("agent",index,"action:",action)
-        return
              
     def step(self, actions):
         self.current_step += 1
@@ -163,7 +141,9 @@ class MultiAgentEnv(object):
             if valid == False:
                 new_valid = False
             new_actions.append(action)
-        
+
+        self.showActions(new_actions)
+        self.showStates()
         # 计算传输消耗和计算消耗
         if self.offload:
             observation, observe_details, details2, prize = self.calc_observation_offload(new_actions)
@@ -173,10 +153,12 @@ class MultiAgentEnv(object):
             if self.current_step > MAX_STEPS:
                 dones[i] = True
 
+        self.show_detail(details2, prize)
+
         obs = self.next_state(new_actions, new_valid)
         # print("next_state",obs)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 0.5
+        total_cost_weight = 1
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
             rewards = - (total_cost_weight * sum(observation + prize) + (1-total_cost_weight) * (observation)) / 1e6
@@ -201,11 +183,7 @@ class MultiAgentEnv(object):
             self.sys_states[agent_i][-1] = self.requests[agent_i][self.global_step % len(self.requests[0])]
         self.task_lists = [[] for _ in range(self.agent_num)]
         return self.scale_state(self.sys_states)
-
-    def render(self, mode='human', close=False):
-        """Render the environment to the screen"""
-        print(f'Step: {self.global_step}')
-
+    
     # 返回系统状态
     def system_state(self):
         return self.sys_states.copy()
@@ -275,9 +253,8 @@ class MultiAgentEnv(object):
                 self.task_lists[agent_i]=[[-1, A_t]] + self.task_lists[agent_i]
             else:
                 self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载给O的A_t任务
-                
-        # print("任务列表", self.task_lists)
-        # self.showActions(actions)
+
+        self.showTaskList(self.task_lists)
         
         # 对每个agent
         for agent_i in range(self.agent_num):
@@ -287,7 +264,7 @@ class MultiAgentEnv(object):
                 C_P = 0
                 total_E_P[agent_i] += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
                 total_B_P[agent_i] += self.task_set[idx][0] * actions[agent_i][1 + idx] / (tau * math.log2(1 + snr_local))
-
+            print("主动传输",total_B_P[agent_i])
             # 任务列表
             agent_i_tasks = self.task_lists[agent_i]
             
@@ -359,9 +336,9 @@ class MultiAgentEnv(object):
                         
                     total_E_R[agent_i] += E_R
         
+        # 处理完所有任务，计算被动传输带宽
         for agent_i in range(self.agent_num):
             snr_local = self.channel_snrs[agent_i][self.global_step % len(self.channel_snrs)]
-            # 处理完所有任务，计算被动传输带宽
             total_B_R[agent_i] = total_I[agent_i] / ((tau - C_time[agent_i]) * math.log2(1 + snr_local))
             # total_prize[agent_i] = (prize_E[agent_i] * weight + prize_B[agent_i] / ((tau - C_time[agent_i]) * math.log2(1 + snr_local))) * 1.2
 
@@ -621,17 +598,40 @@ class MultiAgentEnv(object):
 
         return is_cache_exceed
 
-    def getCurrent_step(self):
-        return self.current_step
+    def render(self, mode='human', close=False):
+            """Render the environment to the screen"""
+            print(f'Step: {self.global_step}')
+
+    def get_requests(self):
+        return [row[-1] for row in self.sys_states]
+    
+    def get_cach_state(self):
+        return [[row[i] for i in range(len(row) - 1)] for row in self.sys_states]
+    
+    def show_detail(self, detail2, prize):
+        print("被动传输消耗, 主动传输消耗, 计算消耗, 奖励")
+        detail2 = np.column_stack(detail2)
+        for i in range(self.agent_num):
+            print("agent",i,detail2[i], prize[i])
     
     def showActions(self, actions):
         for i, action in enumerate(actions):
             print("agent",i,"动作：",action[0],action[1:num_task+1],action[num_task+1:2*num_task+1],action[2*num_task+1:3*num_task+1],action[-1])
-            
+    
+    def showStates(self):
+        for agent_i in range(self.agent_num):
+            print("agent",agent_i,"状态：",self.sys_states[agent_i][0:num_task],self.sys_states[agent_i][num_task:num_task*2],self.sys_states[agent_i][-1])
+
     def showAction(self, action):
         print("动作：",action[0],action[1:num_task+1],action[num_task+1:2*num_task+1],action[2*num_task+1:3*num_task+1],action[-1])
         
     def getNotValid(self):
         return self.not_vaild
+    
+    def showTaskList(self, tasklist):
+        print("任务列表 [agent_i, A_t]")
+        for agent_i in range(len(tasklist)):
+            print("agent",agent_i,tasklist[agent_i])
+
 
 
