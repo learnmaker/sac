@@ -141,9 +141,9 @@ class MultiAgentEnv(object):
             if valid == False:
                 new_valid = False
             new_actions.append(action)
-
-        self.showActions(new_actions)
-        self.showStates()
+        # print("-----------------------------------------------------------------------------------")
+        # self.showActions(new_actions)
+        # self.showStates()
         # 计算传输消耗和计算消耗
         if self.offload:
             observation, observe_details, details2, prize = self.calc_observation_offload(new_actions)
@@ -153,12 +153,12 @@ class MultiAgentEnv(object):
             if self.current_step > MAX_STEPS:
                 dones[i] = True
 
-        self.show_detail(details2, prize)
+        # self.show_detail(details2, prize)
 
         obs = self.next_state(new_actions, new_valid)
         # print("next_state",obs)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 1
+        total_cost_weight = 0.8
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
             rewards = - (total_cost_weight * sum(observation + prize) + (1-total_cost_weight) * (observation)) / 1e6
@@ -242,7 +242,8 @@ class MultiAgentEnv(object):
         total_prize = np.full(self.agent_num, 0.)
         total_I = np.full(self.agent_num, 0.)
         C_time = np.full(self.agent_num, 0.)
-
+        self.task_lists = [[] for _ in range(self.agent_num)]
+        
         # 更新任务列表
         for agent_i in range(self.agent_num):
             # 当前agent产生的任务
@@ -254,7 +255,7 @@ class MultiAgentEnv(object):
             else:
                 self.task_lists[O].append([agent_i, A_t]) # agent_i 卸载给O的A_t任务
 
-        self.showTaskList(self.task_lists)
+        # self.showTaskList(self.task_lists)
         
         # 对每个agent
         for agent_i in range(self.agent_num):
@@ -264,9 +265,10 @@ class MultiAgentEnv(object):
                 C_P = 0
                 total_E_P[agent_i] += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
                 total_B_P[agent_i] += self.task_set[idx][0] * actions[agent_i][1 + idx] / (tau * math.log2(1 + snr_local))
-            print("主动传输",total_B_P[agent_i])
             # 任务列表
             agent_i_tasks = self.task_lists[agent_i]
+            
+            # print("agent",agent_i,"主动传输消耗：",total_B_P[agent_i])
             
             # 计算核数
             C_R_At = actions[agent_i][0]
@@ -274,20 +276,22 @@ class MultiAgentEnv(object):
             # 如果任务列表不为空
             if agent_i_tasks:
                 flag = False # 是否溢出
-                local_At = -1 # 本地计算任务
+                local_At = [] # 已在本地计算任务
                 local = False # 是否为本地计算任务
                 # 对agent的每个任务
                 for task in agent_i_tasks:
                     offload_agent, offload_A_t = task
                     
                     if offload_agent == -1:
+                        # print("存在本地任务，优先处理")
                         local = True
                         offload_agent = agent_i
                     else:
                         local = False
+                        
                     if flag:
-                        total_prize[offload_agent] += 99999
-                        # print("卸载对象任务已满，无法得到卸载反馈结果，+99999")
+                        total_prize[offload_agent] += 3e6
+                        # print("agent",offload_agent,"卸载失败，无法得到卸载反馈结果，+3e6")
                         continue
                     
                     E_R=0
@@ -301,28 +305,31 @@ class MultiAgentEnv(object):
                     S_O_At = self.sys_states[agent_i][num_task + offload_A_t]
                     
                     # 如果有输出缓存，无需计算、无需传输
-                    if S_O_At == 1 or offload_A_t == local_At:
+                    if S_O_At == 1 or offload_A_t in local_At:
+                        # print("任务",offload_A_t,"有输出缓存，无需计算、无需传输")
                         E_R = 0
                         B_R = 0
                         
                     # 否则，需要计算
                     else:
+                        # 计算时间
                         C_time[agent_i] += I_At * w_At / (C_R_At * fD)
                         # 如果计算时间大于最大容许延迟
                         if C_time[agent_i] >= tau:
                             # 惩罚卸载用户
-                            total_prize[offload_agent] += 99999
-                            # print("卸载对象任务溢出，+99999")
+                            total_prize[offload_agent] += 3e6
+                            # print("agent",offload_agent, "卸载对象任务溢出，+3e6")
                             C_time[agent_i] -= I_At * w_At / (C_R_At * fD)
                             flag = True
                             continue
                         
+                        # 计算消耗
                         E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
                             
                         # 如果没有输入数据，需要从服务器下载数据
-                        if S_I_At == 0 and offload_A_t != local_At:
+                        if S_I_At == 0 and offload_A_t not in local_At:
                             total_I[agent_i] += I_At
-                            # print("从服务器下载数据, +",I_At)
+                            # print("agent",agent_i,"从服务器下载",offload_A_t,"数据, +",I_At)
                             B_R += I_At
                             
                     # 最后，如果是卸载任务，需要回传
@@ -330,9 +337,10 @@ class MultiAgentEnv(object):
                         total_I[agent_i] += O_At
                         B_R += O_At
                         total_I[offload_agent] += O_At
-                        # print("计算结果回传, +",O_At)
+                        # print("agent",agent_i,offload_agent,"计算结果回传, +",O_At)
+                        local_At.append(offload_A_t)
                     else:
-                        local_At = offload_A_t
+                        local_At.append(offload_A_t)
                         
                     total_E_R[agent_i] += E_R
         
@@ -349,9 +357,9 @@ class MultiAgentEnv(object):
 
         # 仅被动传输
         if self.reactive_only:
-            return total_B_R + total_E_R * weight, [total_B_R, total_E_R], [total_B_R, 0, total_E_R, 0], total_prize
+            return total_B_R * (1-weight) + total_E_R * weight, [total_B_R, total_E_R], [total_B_R, 0, total_E_R, 0], total_prize
 
-        return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P], total_prize
+        return (total_B_R + total_B_P) * (1-weight) + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P], total_prize
 
     # 样本到动作空间
     def sample2action(self, action):
@@ -453,15 +461,15 @@ class MultiAgentEnv(object):
         dS_I_f_new = [0] * num_task
         dS_O_f_new = [0] * num_task
         # ---------------------数据准备结束-------------------
-        # self.showAction(action)
         
-        # 1. 纠正计算核数 I(At) * w(At) / tau <= C_R(At) * fD
+        # -----------------------------------------------------------1. 纠正计算核数 I(At) * w(At) / tau <= C_R(At) * fD-------------------------
         if I_At * w_At / tau > (CR_At * fD) and S_O_At == 0: # 没有输出缓存，同时分配计算核数不够
             CR_At = min(math.ceil(I_At * w_At / tau / fD), num_core)
             # print("分配计算核数不够",CR_At, num_core)
-        elif S_O_At == 1:
-            CR_At = 0
-
+            
+        if CR_At == 0:
+            CR_At = 1 # 避免除 0 
+        
         # choose best fD for reactive processing (only for case 1)
         if self.best_fDs is not None:
             CR_At = self.best_fDs[A_t]
@@ -506,7 +514,7 @@ class MultiAgentEnv(object):
             action[1 + num_task:1 + num_task * 2] = dS_I_f_new.copy()
 
             return not is_cache_exceed, action
-
+        # ---------------------------------------- 2. 纠正主动传输---------------------------------------------
         # below are for non-heuristic, SAC solution
         bf_sort_idx = np.argsort(b_f_prob)[::-1] # 从概率大的向概率小的排序
 
@@ -518,6 +526,7 @@ class MultiAgentEnv(object):
         if not self.reactive_only:
             action[1:1 + num_task] = b_f_new.copy()
 
+        # ---------------------------------------------------------------------------------------
         push_idx = [idp for idp in range(num_task)] + [idp for idp in range(num_task)]
         push_IO_indc = [0] * num_task + [1] * num_task   # 0 for S_I and 1 for S_O
         push_prob = dS_I_f_prob + dS_O_f_prob
@@ -578,7 +587,12 @@ class MultiAgentEnv(object):
             action[1 + num_task * 2:1 + num_task * 3] = dS_O_f.copy()
 
         # print(action[1 + num_task:1 + num_task * 2], action[1 + num_task * 2:1 + num_task * 3], self.sys_states)
-
+        # --------------------------------------------------修正卸载对象---------------------------------------
+        if action[-1] == agent_i:
+            action[-1] = -1
+        if S_O_At == 1:
+            action[-1] = -1
+            
         if self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, action[1+num_task:1+num_task*2], action[1+num_task*2:1+num_task*3]):
             print("超过缓存容量")
             return False, action

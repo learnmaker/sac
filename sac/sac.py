@@ -70,8 +70,6 @@ class SAC(object):
         action, _, _, h_c = self.actor.sample(3, local_state, global_state, state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
-    
-
     def update_parameters(self, index, memory, batch_size, updates, mold):
         # 状态、动作、奖励、下一状态、是否结束
         state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
@@ -92,6 +90,7 @@ class SAC(object):
                 all_indices = torch.arange(next_state_batch.size(1))
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
+                
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
                 qf_target = self.critic_target(next_local_state, next_action_target) - self.alpha * log_pi_target
             else:

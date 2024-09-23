@@ -2,7 +2,7 @@ chip_config ={
     'tau': 0.1,   # maximum tolerance service latency, second, default 0.02
     'fD': 1.7e8,    # computation frequency of mobile device, 1.5~5GHz, default 1.7e8
     'u': 1e-19,     # effective switched capacitance related to chip architecture, default 1e-19
-    'C': 40e3,    # cache size constraint, test, default 20e3
+    'C': 1e5,    # cache size constraint, test, default 20e3
 }
 
 system_config = {
@@ -10,7 +10,7 @@ system_config = {
     'F': 8,     # number of tasks, default 4, options [4, 6, 8, 10]
     'FQ': 8,    # number of computing frequency options
     'maxp': 70,     # maximum markov chain prob, percentage, default 70%. options [50, 60, 70, 80] 最大马尔可夫链问题
-    'weight': 1,    # objective weight, default 1
+    'weight': 0.5,    # objective weight, default 1
 }
 
 
