@@ -63,9 +63,10 @@ class SAC(object):
         return action.detach().cpu().numpy()[0]
         
     def select_action_lstm(self, index, states, h_c):
-        # [sequence_length, agent_num, local_dim]
-        states = torch.FloatTensor(np.array(states)).to(self.device)
-        
+        # [sequence_length, local_dim]
+        state_seq = torch.FloatTensor(np.array(states)).to(self.device)
+        print(state_seq)
+        sys.exit()
         local_state_seq = states[:,index,:]
         all_indices = torch.arange(states.size(1))
         remaining_indices = all_indices[all_indices != index]

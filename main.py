@@ -67,7 +67,10 @@ def get_state_sequence(index, state_dim):
     # 如果当前时间步少于序列长度，用0填充
     if current_length < sequence_length:
         padding = np.zeros((sequence_length - current_length, state_dim))
-        state_sequence_new = padding + state_sequence[index]
+        if current_length == 0:
+            state_sequence_new = padding
+        else:
+            state_sequence_new = np.concatenate((padding, state_sequence[index]),axis=0)
     else:
         state_sequence_new = state_sequence[index]
     return  state_sequence_new
@@ -316,7 +319,8 @@ if __name__ == '__main__':
             # 经验缓存
             for i in range(agent_num):
                 if args.lstm:
-                    add_state_sequence(i, states)
+                    state_seq = get_state_sequence(i, local_dim)
+                    add_state_sequence(i, states[i])
                     next_state_seq = get_state_sequence(i, local_dim)
                     memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
                 else:
