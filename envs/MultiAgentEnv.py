@@ -586,9 +586,8 @@ class MultiAgentEnv(object):
 
         # print(action[1 + num_task:1 + num_task * 2], action[1 + num_task * 2:1 + num_task * 3], self.sys_states)
         # --------------------------------------------------修正卸载对象---------------------------------------
-        if action[-1] == agent_i:
-            action[-1] = -1
-        if S_O_At == 1:
+        # 如果卸载对象是自己 或者 自己有请求任务的输出缓存
+        if action[-1] == agent_i or S_O_At == 1:
             action[-1] = -1
             
         if self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, action[1+num_task:1+num_task*2], action[1+num_task*2:1+num_task*3]):
