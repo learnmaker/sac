@@ -151,8 +151,7 @@ class SAC(object):
 
         if updates % self.target_update_interval == 0:
             soft_update(self.critic_target, self.critic, self.tau)
-        # print("alpha_tlogs",alpha_tlogs)
-        # critic损失、actor损失、温度参数α的损失和温度参数α的值
+            
         return qf_loss.item(), actor_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     # Save model parameters
