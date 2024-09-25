@@ -391,6 +391,7 @@ if __name__ == '__main__':
                                 action = agent.select_action_info(index, states)
                             else:
                                 action = agent.select_action(state)
+                                
                         actions.append(action)
                         
                     next_states, rewards, new_dones, infos = env.step(actions)

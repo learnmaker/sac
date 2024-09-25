@@ -49,7 +49,6 @@ class Critic(nn.Module):
         self.action_fc = nn.Linear(action_dim, hidden_dim)
         
         self.fc = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(local_dim + action_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
@@ -57,7 +56,6 @@ class Critic(nn.Module):
             nn.Linear(hidden_dim, 1)
         )
         self.fc_info = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(hidden_dim * 3, hidden_dim * 2),
             nn.ReLU(),
             nn.Linear(hidden_dim * 2, hidden_dim),
@@ -65,7 +63,6 @@ class Critic(nn.Module):
             nn.Linear(hidden_dim, 1)
         )
         self.fc_lstm = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(hidden_dim * 3, hidden_dim * 2),
             nn.ReLU(),
             nn.Linear(hidden_dim * 2, hidden_dim),
@@ -107,19 +104,16 @@ class GaussianActor(nn.Module):
         self.action_fc = nn.Linear(action_dim, hidden_dim)
         
         self.fc = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(local_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
         self.fc_info = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
         self.fc_lstm = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
@@ -190,7 +184,6 @@ class GaussianActor(nn.Module):
         log_prob = normal.log_prob(x_t)
         # 因为使用了 tanh 函数，所以需要修正日志概率，以反映动作被限制在实际动作空间边界内的事实
         log_prob -= torch.log(self.action_scale * (1 - y_t.pow(2)) + epsilon)
-        
         if local_state.dim()==2:
             log_prob = log_prob.sum(1, keepdim=True)
         else:
@@ -219,19 +212,16 @@ class DeterministicActor(nn.Module):
         self.action_fc = nn.Linear(action_dim, hidden_dim)
         
         self.fc = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(local_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
         self.fc_info = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
         self.fc_lstm = nn.Sequential(
-            nn.ReLU(),
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
