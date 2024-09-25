@@ -54,29 +54,23 @@ def set_fieldnames(agent_num):
     return
 
 # 添加时间序列
-def add_state_sequence(i, states):
-    local_state = np.array(local_state)
-    global_state = np.array(global_state)
-    
-    if len(state_sequence[i]) < sequence_length:
-        state_sequence[i].append(states)
+def add_state_sequence(index, state):
+    if len(state_sequence[index]) < sequence_length:
+        state_sequence[index].append(state)
     else:
-        state_sequence[i] = state_sequence[i][1:]
-        state_sequence[i].append(states)
-    return
+        state_sequence[index] = state_sequence[index][1:]
+        state_sequence[index].append(state)
 
 # 获取时间序列
-def get_state_sequence(i, state_dim):
-    current_length = len(state_sequence[i])
+def get_state_sequence(index, state_dim):
+    current_length = len(state_sequence[index])
     # 如果当前时间步少于序列长度，用0填充
     if current_length < sequence_length:
-        padding = [np.zeros(state_dim) for _ in range(sequence_length - current_length)]
-        state_sequence_new = padding + state_sequence[i]
+        padding = np.zeros((sequence_length - current_length, state_dim))
+        state_sequence_new = padding + state_sequence[index]
     else:
-        state_sequence_new = state_sequence[i]
-    state_sequence_np = np.array(state_sequence_new)
-    state_sequence_tensor = torch.from_numpy(state_sequence_np).float()
-    return  state_sequence_tensor
+        state_sequence_new = state_sequence[index]
+    return  state_sequence_new
 
 # 展示系统状态
 def show_states(states):
@@ -94,7 +88,7 @@ filename3 = "eval.csv"
 data3 = []
 
 # LSTM序列长度
-sequence_length = 10
+sequence_length = 5
 state_sequence = []
 
 if __name__ == '__main__':
@@ -254,6 +248,7 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
+        # [agent_num, h0, c0]
         if args.lstm:
             h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
             
@@ -280,7 +275,7 @@ if __name__ == '__main__':
                 else:
                     if args.lstm:
                         state_seq = get_state_sequence(index, local_dim)
-                        action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
+                        action, h_cs[index] = agent.select_action_lstm(index, state_seq, h_cs[index])
                     else:
                         if args.global_info:
                             action = agent.select_action_info(index, states)

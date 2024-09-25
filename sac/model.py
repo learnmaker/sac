@@ -9,8 +9,8 @@ from gym import spaces
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
 epsilon = 1e-6
-seq_length = 10  # LSTM序列长度
-num_layers = 1  # LSTM层数
+seq_length = 5  # LSTM序列长度
+num_layers = 2  # LSTM层数
 
 
 # 遍历网络中的所有nn.Linear模块，并对它们的权重和偏置进行初始化

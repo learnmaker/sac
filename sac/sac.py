@@ -62,12 +62,16 @@ class SAC(object):
         action, _, _ = self.actor.sample(2, local_state, global_state)
         return action.detach().cpu().numpy()[0]
         
-    def select_action_lstm(self, i, states, state_sequence, h_c):
+    def select_action_lstm(self, index, states, h_c):
+        # [sequence_length, agent_num, local_dim]
         states = torch.FloatTensor(np.array(states)).to(self.device)
-        local_state = states[i].unsqueeze(0)
-        global_state = states[torch.arange(states.shape[0]) != i].unsqueeze(0)
-        state_sequence = state_sequence.to(self.device)
-        action, _, _, h_c = self.actor.sample(3, local_state, global_state, state_sequence.unsqueeze(0), h_c)
+        
+        local_state_seq = states[:,index,:]
+        all_indices = torch.arange(states.size(1))
+        remaining_indices = all_indices[all_indices != index]
+        global_state_seq = states[:, remaining_indices, :]
+        
+        action, _, _, h_c = self.actor.sample(3, local_state_seq, global_state_seq, state_sequence.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
     def update_parameters(self, index, memory, batch_size, updates, mold):
