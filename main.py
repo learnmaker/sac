@@ -9,7 +9,7 @@ import sys
 import csv
 from sac.sac import SAC
 from tool.generate_snrs import generate_snrs
-from tool.samples_from_transmat import generate_request
+from tool.sample_from_TimeSeries import generate_request
 from torch.utils.tensorboard import SummaryWriter
 from sac.replay_memory import ReplayMemory
 from envs.MultiAgentEnv import MultiAgentEnv
@@ -199,8 +199,8 @@ if __name__ == '__main__':
 
     # 跟据服务器数量和用户设备数量生成 任务请求和信噪比，保存在temp文件夹
     generate_snrs(args.server_num)  # 生成信噪比，每个服务器下的信噪比相同
-    generate_request(args.server_num, args.ud_num, task_num, maxp)  # 生成任务请求
-
+    generate_request(args.server_num, args.ud_num, task_num)  # 生成任务请求
+    
     # Tensorboard保存实验数据
     filename = '{}_SAC_{}{}{}{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S"), 
                                 args.exp_case, 
@@ -226,7 +226,7 @@ if __name__ == '__main__':
         snr = load_data('./mydata/temp/dynamic_snrs_' + str(server+1)+'.csv').reshape(1, -1)[0]
         for ud in range(args.ud_num):
             # 该用户设备的任务请求
-            At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) + "_samples"+str(task_num)+"_maxp"+str(maxp)+".csv").reshape(1, -1)[0]
+            At = load_data("./mydata/temp/server"+str(server+1)+"_ud"+str(ud+1) + "_samples"+str(task_num)+".csv").reshape(1, -1)[0]
             Ats.append(At)
             snrs.append(snr)
             # 该用户设备的SAC网络

@@ -77,8 +77,11 @@ class Critic(nn.Module):
         return self.fc(concatenated)
         
     def forward_info(self, local_state, global_states, action):
+        # local_state + global_states ->hidden_dim
         attn_features = self.global_attention(local_state, global_states)
+        # local_state -> hidden_dim
         local_state = self.local_fc(local_state)
+        # action -> hidden_dim
         action = self.action_fc(action)
         concatenated = torch.cat((local_state, attn_features, action), dim=1)
         return self.fc_info(concatenated)

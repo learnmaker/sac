@@ -90,7 +90,6 @@ class SAC(object):
                 all_indices = torch.arange(next_state_batch.size(1))
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
-                
                 next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
                 qf_target = self.critic_target(next_local_state, next_action_target) - self.alpha * log_pi_target
             else:
