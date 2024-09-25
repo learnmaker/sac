@@ -208,8 +208,6 @@ class MultiAgentEnv(object):
             else:
                 B_R = (1 - S_I_At) * (1 - S_O_At) * I_At / ((tau - I_At * w_At / (C_R_At * fD)) * math.log2(1 + snr_t))
             E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
-            # print("延迟时间",tau)
-            # print("剩余时间",tau - I_At * w_At / (C_R_At * fD))
             
             total_B_R[agent_i] = B_R
             total_E_R[agent_i] = E_R
@@ -226,7 +224,7 @@ class MultiAgentEnv(object):
             total_E_P[agent_i] = E_P
             total_B_P[agent_i] = B_P
         
-        return total_B_R + total_B_P + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P]
+        return (total_B_R + total_B_P) * (1-weight) + (total_E_R + total_E_P) * weight, [total_B_R + total_B_P, total_E_R + total_E_P], [total_B_R, total_B_P, total_E_R, total_E_P]
     
     # 计算传输消耗和计算消耗
     def calc_observation_offload(self, actions):
