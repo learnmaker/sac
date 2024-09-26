@@ -11,6 +11,7 @@ LOG_SIG_MIN = -20
 epsilon = 1e-6
 seq_length = 5  # LSTM序列长度
 num_layers = 2  # LSTM层数
+lstm_hidden_size = 64 # LSTM隐藏层
 
 
 # 遍历网络中的所有nn.Linear模块，并对它们的权重和偏置进行初始化
@@ -44,7 +45,7 @@ class Critic(nn.Module):
         self.local_fc = nn.Linear(local_dim, hidden_dim)
         self.lstm = nn.LSTM(local_dim, hidden_dim)
         # 处理global_states
-        self.global_attention = AttentionLayer(local_dim, hidden_dim)
+        self.global_attention = AttentionLayer(local_dim, lstm_hidden_size, num_layers, batch_first=True)
         # 处理action
         self.action_fc = nn.Linear(action_dim, hidden_dim)
         
@@ -100,7 +101,7 @@ class GaussianActor(nn.Module):
         action_dim = action_space.shape[0]
         # 处理state
         self.local_fc = nn.Linear(local_dim, hidden_dim)
-        self.lstm = nn.LSTM(local_dim, hidden_dim)
+        self.lstm = nn.LSTM(local_dim, hidden_dim, num_layers)
         # 处理global_states
         self.global_attention = AttentionLayer(local_dim, hidden_dim)
         # 处理action
@@ -117,7 +118,7 @@ class GaussianActor(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
         self.fc_lstm = nn.Sequential(
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim + local_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
@@ -151,8 +152,8 @@ class GaussianActor(nn.Module):
         return mean, log_std
     
     def forward_info(self, local_state, global_states):
-        attn_features = self.global_attention(local_state, global_states)
         local_state = self.local_fc(local_state)
+        attn_features = self.global_attention(local_state, global_states)
         concatenated = torch.cat((local_state, attn_features), dim=1)
         x = self.fc_info(concatenated)
         mean = self.mean_linear(x)
@@ -160,7 +161,7 @@ class GaussianActor(nn.Module):
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX) # 限制在规定范围内
         return mean, log_std
     
-    def forward_lstm(self, local_state, global_states, state_sequence):
+    def forward_lstm(self, local_state, global_states, state_sequence, h_c):
         lstm_out, h_c = self.lstm(state_sequence, h_c)
         lstm_out = lstm_out[:, -1, :] # 取最后一个时间步的输出
         attn_features = self.global_attention(lstm_out, global_states)
@@ -169,15 +170,15 @@ class GaussianActor(nn.Module):
         mean = self.mean_linear(x)
         log_std = self.log_std_linear(x)
         log_std = torch.clamp(log_std, min=LOG_SIG_MIN, max=LOG_SIG_MAX) # 限制在规定范围内
-        return mean, log_std
+        return mean, log_std, h_c
 
-    def sample(self, mold, local_state, global_states=None, state_sequence=None):
+    def sample(self, mold, local_state, global_states=None, state_sequence=None, h_c=None):
         if mold == 1:
             mean, log_std = self.forward(local_state)
         elif mold == 2:
             mean, log_std = self.forward_info(local_state, global_states)
         else:
-            mean, log_std = self.forward_lstm(local_state, global_states, state_sequence)
+            mean, log_std, h_c = self.forward_lstm(local_state, global_states, state_sequence, h_c)
             
         std = log_std.exp()
         normal = Normal(mean, std) # 使用预测的均值和标准差创建一个正态分布
@@ -192,7 +193,7 @@ class GaussianActor(nn.Module):
         else:
             log_prob = log_prob.sum(0, keepdim=True)
         mean = torch.tanh(mean) * self.action_scale + self.action_bias
-        return action, log_prob, mean
+        return action, log_prob, mean, h_c
 
     def to(self, device):
         self.action_scale = self.action_scale.to(device)
@@ -283,14 +284,15 @@ class DeterministicActor(nn.Module):
 class AttentionLayer(nn.Module):
     def __init__(self, feature_dim, hidden_dim = 64):
         super(AttentionLayer, self).__init__()
-        self.W_query = nn.Linear(feature_dim, hidden_dim)
+        self.W_query = nn.Linear(hidden_dim, hidden_dim)
         self.W_key = nn.Linear(feature_dim, hidden_dim)
         self.W_value = nn.Linear(hidden_dim, hidden_dim)
         self.sqrt_scalar = np.sqrt(hidden_dim)
 
     def forward(self, query, keys):
-        # query shape: (batch_size, feature_dim)
+        # query shape: (batch_size, hidden_dim)
         # keys shape: (batch_size, num_agents - 1, feature_dim)
+        
         # Project queries and keys
         queries = self.W_query(query).unsqueeze(1)  # (batch_size, 1, hidden_dim)
         keys = self.W_key(keys)  # (batch_size, num_agents - 1, hidden_dim)

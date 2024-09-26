@@ -278,7 +278,7 @@ if __name__ == '__main__':
                 else:
                     if args.lstm:
                         state_seq = get_state_sequence(index, local_dim)
-                        action, h_cs[index] = agent.select_action_lstm(index, state_seq, h_cs[index])
+                        action, h_cs[index] = agent.select_action_lstm(index, states, state_seq, h_cs[index])
                     else:
                         if args.global_info:
                             action = agent.select_action_info(index, states)

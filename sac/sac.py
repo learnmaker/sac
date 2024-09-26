@@ -62,17 +62,15 @@ class SAC(object):
         action, _, _ = self.actor.sample(2, local_state, global_state)
         return action.detach().cpu().numpy()[0]
         
-    def select_action_lstm(self, index, states, h_c):
+    def select_action_lstm(self, index, state_seq, h_c, states):
         # [sequence_length, local_dim]
-        state_seq = torch.FloatTensor(np.array(states)).to(self.device)
-        print(state_seq)
-        sys.exit()
-        local_state_seq = states[:,index,:]
-        all_indices = torch.arange(states.size(1))
-        remaining_indices = all_indices[all_indices != index]
-        global_state_seq = states[:, remaining_indices, :]
+        state_seq = torch.FloatTensor(np.array(state_seq)).to(self.device)
         
-        action, _, _, h_c = self.actor.sample(3, local_state_seq, global_state_seq, state_sequence.unsqueeze(0), h_c)
+        states = torch.FloatTensor(np.array(states)).to(self.device)
+        local_state = states[index].unsqueeze(0)
+        global_state = states[torch.arange(states.shape[0]) != index].unsqueeze(0)
+        
+        action, _, _, h_c = self.actor.sample(3, local_state, global_state, state_seq.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
     def update_parameters(self, index, memory, batch_size, updates, mold):
@@ -88,7 +86,8 @@ class SAC(object):
         # 计算next_q_value
         with torch.no_grad():
             if mold == 3:
-                next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, next_state_batch)
+                
+                next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, local_state, global_state, state_seq.unsqueeze(0))
                 qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
             elif mold == 2:
                 next_local_state = next_state_batch[:,index,:]
