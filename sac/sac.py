@@ -39,16 +39,12 @@ class SAC(object):
                 
             self.actor = GaussianActor(local_dim, args.hidden_size, action_space).to(self.device)
             self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-            self.actor_target = GaussianActor(local_dim, args.hidden_size, action_space).to(self.device)
-            hard_update(self.actor_target, self.actor)
 
         else:
             self.alpha = 0
             self.automatic_entropy_tuning = False
             self.actor = DeterministicActor(local_dim, args.hidden_size, action_space).to(self.device)
             self.actor_optim = Adam(self.actor.parameters(), lr=args.lr)
-            self.actor_target = DeterministicActor(local_dim, args.hidden_size, action_space).to(self.device)
-            hard_update(self.actor_target, self.actor)
             
     def select_action(self, state):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
@@ -62,83 +58,97 @@ class SAC(object):
         action, _, _ = self.actor.sample(2, local_state, global_state)
         return action.detach().cpu().numpy()[0]
         
-    def select_action_lstm(self, index, state_seq, h_c, states):
+    def select_action_lstm(self, index, states, state_seq, h_c):
         # [sequence_length, local_dim]
         state_seq = torch.FloatTensor(np.array(state_seq)).to(self.device)
-        
         states = torch.FloatTensor(np.array(states)).to(self.device)
-        local_state = states[index].unsqueeze(0)
+        h_c = torch.FloatTensor(np.array(h_c)).to(self.device)
+
         global_state = states[torch.arange(states.shape[0]) != index].unsqueeze(0)
         
-        action, _, _, h_c = self.actor.sample(3, local_state, global_state, state_seq.unsqueeze(0), h_c)
+        action, _, _, h_c = self.actor.sample(3, global_state, state_seq.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
     def update_parameters(self, index, memory, batch_size, updates, mold):
         # 状态、动作、奖励、下一状态、是否结束
-        state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(batch_size=batch_size)
-
-        state_batch = torch.FloatTensor(state_batch).to(self.device)
-        next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
-        action_batch = torch.FloatTensor(action_batch).to(self.device)
-        reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
-        mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
+        if mold == 3:
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch, state_seq_batch, next_state_seq_batch, old_hc_batch, hc_batch = memory.sample(mold, batch_size=batch_size)
+            
+            state_batch = torch.FloatTensor(state_batch).to(self.device)
+            next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
+            action_batch = torch.FloatTensor(action_batch).to(self.device)
+            reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
+            mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
+            state_seq_batch = torch.FloatTensor(state_seq_batch).to(self.device)
+            next_state_seq_batch = torch.FloatTensor(next_state_seq_batch).to(self.device)
+            old_hc_batch = torch.FloatTensor(old_hc_batch).to(self.device)
+            hc_batch = torch.FloatTensor(hc_batch).to(self.device)
+        else:
+            state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(mold, batch_size=batch_size)
+            
+            state_batch = torch.FloatTensor(state_batch).to(self.device)
+            next_state_batch = torch.FloatTensor(next_state_batch).to(self.device)
+            action_batch = torch.FloatTensor(action_batch).to(self.device)
+            reward_batch = torch.FloatTensor(reward_batch).to(self.device).unsqueeze(1)
+            mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
         
         # 计算next_q_value
         with torch.no_grad():
             if mold == 3:
+                all_indices = torch.arange(next_state_batch.size(1))
+                remaining_indices = all_indices[all_indices != index]
+                next_global_state = next_state_batch[:, remaining_indices, :]
                 
-                next_action_target, log_pi_target, _, _ = self.actor_target.sample(mold, local_state, global_state, state_seq.unsqueeze(0))
-                qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
+                next_action, next_log_prob, _, _ = self.actor_target.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
+                qf1_next_target, qf2_next_target = self.critic_target(next_global_state, next_state_seq_batch, hc_batch, next_action)
             elif mold == 2:
                 next_local_state = next_state_batch[:,index,:]
                 all_indices = torch.arange(next_state_batch.size(1))
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
-                next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
-                qf_target = self.critic_target(next_local_state, next_action_target) - self.alpha * log_pi_target
-            else:
-                next_action_target, log_pi_target, _ = self.actor_target.sample(mold, next_state_batch)
-                qf_target = self.critic_target(next_state_batch, next_action_target) - self.alpha * log_pi_target
 
-            next_q_value = reward_batch + mask_batch * self.gamma * (qf_target)
+                next_action, next_log_prob, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
+                qf1_next_target, qf2_next_target = self.critic_target(next_local_state, next_global_state, next_action)
+            else:
+                # 通过actor_target得到动作
+                next_action, next_log_prob, _= self.actor_target.sample(mold, next_state_batch)
+                qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_action)
+
+            min_qf = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_log_prob
+            next_q_value = reward_batch + mask_batch * self.gamma * (min_qf)
 
         # 更新critic
         if mold == 3:
-            qf= self.critic.forward_lstm(state_batch, action_batch)
+            qf1, qf2= self.critic.forward_lstm(next_global_state, next_state_seq_batch, hc_batch, next_action)
         elif mold == 2:
-            qf= self.critic.forward_info(next_local_state, next_global_state, action_batch)
+            qf1, qf2= self.critic.forward_info(next_local_state, next_global_state, action_batch)
         else:
-            qf= self.critic.forward(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step           
-        qf_loss = F.mse_loss(qf, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+            qf1, qf2= self.critic.forward(state_batch, action_batch)  # Two Q-functions to mitigate positive bias in the actor improvement step           
+        qf1_loss = F.mse_loss(qf1, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+        qf2_loss = F.mse_loss(qf2, next_q_value)  # JQ = 𝔼(st,at)~D[0.5(Q1(st,at) - r(st,at) - γ(𝔼st+1~p[V(st+1)]))^2]
+        qf_loss = qf1_loss + qf2_loss
+
         self.critic_optim.zero_grad()
         qf_loss.backward()
         self.critic_optim.step()
 
         # 更新actor
         if mold == 3:
-            pi, log_pi, _, _ = self.actor.sample(state_batch)
-            qf_pi = self.critic(state_batch, pi)
+            pi, log_pi, _, _ = self.actor.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
+            qf1_pi, qf2_pi = self.critic(next_global_state, next_state_seq_batch, hc_batch, pi)
         elif mold == 2:
-            local_state = state_batch[:,index,:]
-            all_indices = torch.arange(state_batch.size(1))
-            remaining_indices = all_indices[all_indices != index]
-            global_state = state_batch[:, remaining_indices, :]
-            pi, log_pi, _ = self.actor.sample(mold, local_state, global_state)
-            qf_pi = self.critic(local_state, pi)
+            pi, log_pi, _ = self.actor.sample(mold, next_local_state, next_global_state)
+            qf1_pi, qf2_pi = self.critic(next_local_state, next_global_state, pi)
         else:
             pi, log_pi, _ = self.actor.sample(mold, state_batch)
-            qf_pi = self.critic(state_batch, pi)
-            
-        actor_loss = ((self.alpha * log_pi) - qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
+            qf1_pi, qf2_pi = self.critic(state_batch, pi)
+
+        min_qf_pi = torch.min(qf1_pi, qf2_pi)   
+        actor_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
+
         self.actor_optim.zero_grad()
         actor_loss.backward()
         self.actor_optim.step()
-
-        # 软更新目标网络
-        for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
-        for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
-            target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
             
         if self.automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()

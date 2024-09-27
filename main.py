@@ -40,7 +40,8 @@ def set_fieldnames(agent_num):
     for index in range(agent_num):
         server_index, ud_index = index2ud(index, args.ud_num)
         
-        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_1')
+        fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/critic_2')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/policy')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'_loss/entropy_loss')
         fd1.append('server'+str(server_index+1)+'_userDevice'+str(ud_index+1)+'/alpha')
@@ -246,6 +247,7 @@ if __name__ == '__main__':
     result_comp = []  # 保存计算消耗评估结果
     
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
+
         # 初始化
         episode_rewards = np.full(agent_num, 0.)
         episode_step = 0
@@ -261,7 +263,9 @@ if __name__ == '__main__':
             actions=[]
             masks=[]
             temp_data1=[]
-                
+            if args.lstm:
+                old_hc = h_cs
+
             # 对每个agent进行训练
             for index in range(agent_num):
                 
@@ -277,7 +281,7 @@ if __name__ == '__main__':
                     action = env.action_space.sample()  # 随机动作
                 else:
                     if args.lstm:
-                        state_seq = get_state_sequence(index, local_dim)
+                        state_seq = get_state_sequence(i, local_dim)
                         action, h_cs[index] = agent.select_action_lstm(index, states, state_seq, h_cs[index])
                     else:
                         if args.global_info:
@@ -295,17 +299,20 @@ if __name__ == '__main__':
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
-                        critic_loss, actor_loss, ent_loss, alpha = agent.update_parameters(
+                        critic_1_loss, critic_2_loss, actor_loss, ent_loss, alpha = agent.update_parameters(
                             index, memories[index], args.batch_size, updates, mold)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'_loss/critic', critic_loss, updates)
+                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
+                        writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
+                            ud_index+1)+'loss/critic_2', critic_2_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
                                         str(ud_index+1)+'loss/actor', actor_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'loss/entropy_loss', ent_loss, updates)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
                             ud_index+1)+'entropy_temprature/alpha', alpha, updates)
-                        temp_data1.append(critic_loss)
+                        temp_data1.append(critic_1_loss)
+                        temp_data1.append(critic_2_loss)
                         temp_data1.append(actor_loss)
                         temp_data1.append(ent_loss)
                         temp_data1.append(alpha)
@@ -315,14 +322,14 @@ if __name__ == '__main__':
                 data1.append(temp_data1)
                     
             next_states, rewards, new_dones, infos = env.step(actions)  # Step
-            
+
             # 经验缓存
             for i in range(agent_num):
                 if args.lstm:
                     state_seq = get_state_sequence(i, local_dim)
                     add_state_sequence(i, states[i])
                     next_state_seq = get_state_sequence(i, local_dim)
-                    memories[i].push(state_seq, actions[i], rewards[i], next_state_seq, masks[i])
+                    memories[i].push(states, actions[i], rewards[i], next_states, masks[i], state_seq, next_state_seq, old_hc[i], h_cs[i])
                 else:
                     if args.global_info:
                         memories[i].push(states, actions[i], rewards[i], next_states, masks[i])

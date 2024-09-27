@@ -17,14 +17,14 @@ if not os.path.exists("runs/"+ filename + "/pic/"):
 
 # data1
 headers1 = data1.columns.tolist()
-parameters = ["critic_loss", "actor_loss", "entropy_loss", "alpha"]
+parameters = ["critic_1_loss", "critic_2_loss", "actor_loss", "entropy_loss", "alpha"]
 for index,parameter in enumerate(parameters):
     
-    for i in range(len(headers1)//4):
+    for i in range(len(headers1)//5):
         x = list(range(data1.shape[0]))
-        y = data1.iloc[:, index+i*4].tolist()
+        y = data1.iloc[:, index+i*5].tolist()
         
-        plt.plot(x, y, label=headers1[index+i*4])
+        plt.plot(x, y, label=headers1[index+i*5])
         
     # 添加标题、标签和图例
     plt.title(parameter + ' for agent')
