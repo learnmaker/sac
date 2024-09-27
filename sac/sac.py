@@ -48,14 +48,14 @@ class SAC(object):
             
     def select_action(self, state):
         state = torch.FloatTensor(state).to(self.device).unsqueeze(0)
-        action, _, _ = self.actor.sample(1, state)
+        action, _, _ , _= self.actor.sample(1, state)
         return action.detach().cpu().numpy()[0]
         
     def select_action_info(self, i, states):
         states = torch.FloatTensor(np.array(states)).to(self.device)
         local_state = states[i].unsqueeze(0)
         global_state = states[torch.arange(states.shape[0]) != i].unsqueeze(0)
-        action, _, _ = self.actor.sample(2, local_state, global_state)
+        action, _, _ , _= self.actor.sample(2, local_state, global_state)
         return action.detach().cpu().numpy()[0]
         
     def select_action_lstm(self, index, states, state_seq, h_c):
@@ -99,7 +99,7 @@ class SAC(object):
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
                 
-                next_action, next_log_prob, _, _ = self.actor_target.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
+                next_action, next_log_prob, _, _ = self.actor.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
                 qf1_next_target, qf2_next_target = self.critic_target(next_global_state, next_state_seq_batch, hc_batch, next_action)
             elif mold == 2:
                 next_local_state = next_state_batch[:,index,:]
@@ -107,11 +107,11 @@ class SAC(object):
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
 
-                next_action, next_log_prob, _ = self.actor_target.sample(mold, next_local_state, next_global_state)
+                next_action, next_log_prob, _, _= self.actor.sample(mold, next_local_state, next_global_state)
                 qf1_next_target, qf2_next_target = self.critic_target(next_local_state, next_global_state, next_action)
             else:
                 # 通过actor_target得到动作
-                next_action, next_log_prob, _= self.actor_target.sample(mold, next_state_batch)
+                next_action, next_log_prob, _, _= self.actor.sample(mold, next_state_batch)
                 qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_action)
 
             min_qf = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_log_prob
@@ -137,10 +137,10 @@ class SAC(object):
             pi, log_pi, _, _ = self.actor.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
             qf1_pi, qf2_pi = self.critic(next_global_state, next_state_seq_batch, hc_batch, pi)
         elif mold == 2:
-            pi, log_pi, _ = self.actor.sample(mold, next_local_state, next_global_state)
+            pi, log_pi, _, _ = self.actor.sample(mold, next_local_state, next_global_state)
             qf1_pi, qf2_pi = self.critic(next_local_state, next_global_state, pi)
         else:
-            pi, log_pi, _ = self.actor.sample(mold, state_batch)
+            pi, log_pi, _, _ = self.actor.sample(mold, state_batch)
             qf1_pi, qf2_pi = self.critic(state_batch, pi)
 
         min_qf_pi = torch.min(qf1_pi, qf2_pi)   
@@ -166,7 +166,7 @@ class SAC(object):
         if updates % self.target_update_interval == 0:
             soft_update(self.critic_target, self.critic, self.tau)
             
-        return qf_loss.item(), actor_loss.item(), alpha_loss.item(), alpha_tlogs.item()
+        return qf1_loss.item(), qf2_loss.item(), actor_loss.item(), alpha_loss.item(), alpha_tlogs.item()
 
     # Save model parameters
     def save_checkpoint(self, env_name, suffix="", ckpt_path=None):
