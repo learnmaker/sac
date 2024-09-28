@@ -185,7 +185,7 @@ class GaussianActor(nn.Module):
     def forward_lstm(self, global_states, state_sequence, h_c):
         lstm_out, h_c = self.lstm(state_sequence, h_c)
         lstm_out = lstm_out[:, -1, :] # 取最后一个时间步的输出
-        attn_features = self.global_attention(lstm_out, global_states)
+        attn_features = self.global_attention.forward(lstm_out, global_states, lstm=True)
         x = self.fc_lstm(attn_features)
         mean = self.mean_linear(x)
         log_std = self.log_std_linear(x)
@@ -301,17 +301,21 @@ class DeterministicActor(nn.Module):
 class AttentionLayer(nn.Module):
     def __init__(self, feature_dim, hidden_dim):
         super(AttentionLayer, self).__init__()
-        self.W_query = nn.Linear(hidden_dim, hidden_dim)
+        self.W_query = nn.Linear(feature_dim, hidden_dim)
+        self.W_query_lstm = nn.Linear(hidden_dim, hidden_dim)
         self.W_key = nn.Linear(feature_dim, hidden_dim)
         self.W_value = nn.Linear(hidden_dim, hidden_dim)
         self.sqrt_scalar = np.sqrt(hidden_dim)
 
-    def forward(self, query, keys):
+    def forward(self, query, keys, lstm=False):
         # query shape: (batch_size, hidden_dim)
         # keys shape: (batch_size, num_agents - 1, feature_dim)
         
         # Project queries and keys
-        queries = self.W_query(query).unsqueeze(1)  # (batch_size, 1, hidden_dim)
+        if lstm:
+            queries = self.W_query_lstm(query).unsqueeze(1)  # (batch_size, 1, hidden_dim)
+        else:
+            queries = self.W_query(query).unsqueeze(1)  # (batch_size, 1, hidden_dim)
         keys = self.W_key(keys)  # (batch_size, num_agents - 1, hidden_dim)
         
         # Compute attention scores (scaled dot product attention)

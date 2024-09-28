@@ -25,6 +25,12 @@ def index2ud(index, ud_num):
     ud = index - server * ud_num
     return server, ud
 
+def to_numpy(hc):
+    h, c = hc
+    h_np = h.cpu().numpy()
+    c_np = c.cpu().numpy()
+    return (h_np, c_np)
+
 # 获取最大位数
 def find_max_digit_position(num):
     if num == 0:
@@ -255,7 +261,7 @@ if __name__ == '__main__':
         states = env.reset()
         # [agent_num, h0, c0]
         if args.lstm:
-            h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+            h_cs = [agent.actor.init_hidden(device) for agent in agents]
             
         # 如果还有agent没有结束
         while np.sum(dones == False) > 0:   # <----------------------------------- 训练步数step
@@ -329,7 +335,7 @@ if __name__ == '__main__':
                     state_seq = get_state_sequence(i, local_dim)
                     add_state_sequence(i, states[i])
                     next_state_seq = get_state_sequence(i, local_dim)
-                    memories[i].push(states, actions[i], rewards[i], next_states, masks[i], state_seq, next_state_seq, old_hc[i], h_cs[i])
+                    memories[i].push(states, actions[i], rewards[i], next_states, masks[i], state_seq, next_state_seq, to_numpy(old_hc[i]), to_numpy(h_cs[i]))
                 else:
                     if args.global_info:
                         memories[i].push(states, actions[i], rewards[i], next_states, masks[i])

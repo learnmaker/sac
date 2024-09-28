@@ -7,6 +7,11 @@ from torch.optim import Adam
 from sac.utils import soft_update, hard_update
 from sac.model import Critic, GaussianActor, DeterministicActor
 
+def to_tensor(hc_np, device):
+    h_np, c_np = hc_np
+    h_t = torch.from_numpy(h_np).to(device)
+    c_t = torch.from_numpy(c_np).to(device)
+    return (h_t, c_t)
 
 class SAC(object):
     def __init__(self, local_dim, action_space, args):
@@ -62,11 +67,8 @@ class SAC(object):
         # [sequence_length, local_dim]
         state_seq = torch.FloatTensor(np.array(state_seq)).to(self.device)
         states = torch.FloatTensor(np.array(states)).to(self.device)
-        h_c = torch.FloatTensor(np.array(h_c)).to(self.device)
-
         global_state = states[torch.arange(states.shape[0]) != index].unsqueeze(0)
-        
-        action, _, _, h_c = self.actor.sample(3, global_state, state_seq.unsqueeze(0), h_c)
+        action, _, _, h_c = self.actor.sample(3, None, global_state, state_seq.unsqueeze(0), h_c)
         return action.detach().cpu().numpy()[0], h_c
     
     def update_parameters(self, index, memory, batch_size, updates, mold):
@@ -99,8 +101,8 @@ class SAC(object):
                 remaining_indices = all_indices[all_indices != index]
                 next_global_state = next_state_batch[:, remaining_indices, :]
                 
-                next_action, next_log_prob, _, _ = self.actor.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
-                qf1_next_target, qf2_next_target = self.critic_target(next_global_state, next_state_seq_batch, hc_batch, next_action)
+                next_action, next_log_prob, _, _ = self.actor.sample(mold, None, next_global_state, next_state_seq_batch, hc_batch)
+                qf1_next_target, qf2_next_target = self.critic_target.forward_lstm(next_global_state, next_state_seq_batch, hc_batch, next_action)
             elif mold == 2:
                 next_local_state = next_state_batch[:,index,:]
                 all_indices = torch.arange(next_state_batch.size(1))
@@ -108,11 +110,11 @@ class SAC(object):
                 next_global_state = next_state_batch[:, remaining_indices, :]
 
                 next_action, next_log_prob, _, _= self.actor.sample(mold, next_local_state, next_global_state)
-                qf1_next_target, qf2_next_target = self.critic_target(next_local_state, next_global_state, next_action)
+                qf1_next_target, qf2_next_target = self.critic_target.forward_info(next_local_state, next_global_state, next_action)
             else:
                 # 通过actor_target得到动作
                 next_action, next_log_prob, _, _= self.actor.sample(mold, next_state_batch)
-                qf1_next_target, qf2_next_target = self.critic_target(next_state_batch, next_action)
+                qf1_next_target, qf2_next_target = self.critic_target.forward(next_state_batch, next_action)
 
             min_qf = torch.min(qf1_next_target, qf2_next_target) - self.alpha * next_log_prob
             next_q_value = reward_batch + mask_batch * self.gamma * (min_qf)
@@ -134,14 +136,14 @@ class SAC(object):
 
         # 更新actor
         if mold == 3:
-            pi, log_pi, _, _ = self.actor.sample(mold, next_global_state, next_state_seq_batch, hc_batch)
-            qf1_pi, qf2_pi = self.critic(next_global_state, next_state_seq_batch, hc_batch, pi)
+            pi, log_pi, _, _ = self.actor.sample(mold, None, next_global_state, next_state_seq_batch, hc_batch)
+            qf1_pi, qf2_pi = self.critic.forward_lstm(next_global_state, next_state_seq_batch, hc_batch, pi)
         elif mold == 2:
             pi, log_pi, _, _ = self.actor.sample(mold, next_local_state, next_global_state)
-            qf1_pi, qf2_pi = self.critic(next_local_state, next_global_state, pi)
+            qf1_pi, qf2_pi = self.critic.forward_info(next_local_state, next_global_state, pi)
         else:
             pi, log_pi, _, _ = self.actor.sample(mold, state_batch)
-            qf1_pi, qf2_pi = self.critic(state_batch, pi)
+            qf1_pi, qf2_pi = self.critic.forward(state_batch, pi)
 
         min_qf_pi = torch.min(qf1_pi, qf2_pi)   
         actor_loss = ((self.alpha * log_pi) - min_qf_pi).mean() # Jπ = 𝔼st∼D,εt∼N[α * logπ(f(εt;st)|st) − Q(st,f(εt;st))]
