@@ -27,8 +27,8 @@ def index2ud(index, ud_num):
 
 def to_numpy(hc):
     h, c = hc
-    h_np = h.cpu().numpy()
-    c_np = c.cpu().numpy()
+    h_np = h.detach().cpu().numpy()
+    c_np = c.detach().cpu().numpy()
     return (h_np, c_np)
 
 # 获取最大位数
@@ -243,7 +243,7 @@ if __name__ == '__main__':
     env.action_space.seed(args.seed)
 
     # 经验缓存区
-    memories = [ReplayMemory(args.replay_size, args.seed) for _ in range(agent_num)]
+    memories = [ReplayMemory(args.replay_size, args.seed, device) for _ in range(agent_num)]
     
     # ------------------------------------------------------3. 训练-----------------------------------------------------------------------------
     print("环境初始化完毕，开始训练")
@@ -287,7 +287,7 @@ if __name__ == '__main__':
                     action = env.action_space.sample()  # 随机动作
                 else:
                     if args.lstm:
-                        state_seq = get_state_sequence(i, local_dim)
+                        state_seq = get_state_sequence(index, local_dim)
                         action, h_cs[index] = agent.select_action_lstm(index, states, state_seq, h_cs[index])
                     else:
                         if args.global_info:

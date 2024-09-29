@@ -9,7 +9,6 @@ from gym import spaces
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
 epsilon = 1e-6
-seq_length = 5  # LSTM序列长度
 num_layers = 2  # LSTM层数
 attention_hidden_size = 64 # attention隐藏层
 
@@ -41,7 +40,7 @@ class Critic(nn.Module):
     def __init__(self, local_dim, action_dim, hidden_dim):
         super(Critic, self).__init__()
         # 处理state
-        self.lstm = nn.LSTM(local_dim, attention_hidden_size, num_layers=num_layers)
+        self.lstm = nn.LSTM(local_dim, attention_hidden_size, num_layers, batch_first=True)
         # 处理global_states
         self.global_attention = AttentionLayer(local_dim, attention_hidden_size)
         # 处理action
@@ -109,7 +108,7 @@ class Critic(nn.Module):
     def forward_lstm(self, global_states, state_sequence, hc, action):
         lstm_out, h_c = self.lstm(state_sequence, hc)
         lstm_out = lstm_out[:, -1, :] # 取最后一个时间步的输出
-        attn_features = self.global_attention(lstm_out, global_states)
+        attn_features = self.global_attention(lstm_out, global_states, lstm = True)
         concatenated = torch.cat((attn_features, action), dim=1)
         x1 = self.fc_lstm1(concatenated)
         x2 = self.fc_lstm2(concatenated)
@@ -121,7 +120,7 @@ class GaussianActor(nn.Module):
         super(GaussianActor, self).__init__()
         action_dim = action_space.shape[0]
         # 处理state
-        self.lstm = nn.LSTM(local_dim, attention_hidden_size, num_layers=num_layers)
+        self.lstm = nn.LSTM(local_dim, attention_hidden_size, num_layers, batch_first=True)
         # 处理global_states
         self.global_attention = AttentionLayer(local_dim, attention_hidden_size)
         # 处理action
@@ -163,8 +162,8 @@ class GaussianActor(nn.Module):
     
     def init_hidden(self, device):
         # 初始化隐藏状态 h_0 和细胞状态 c_0
-        h_0 = torch.zeros(num_layers, seq_length, attention_hidden_size).to(device)
-        c_0 = torch.zeros(num_layers, seq_length, attention_hidden_size).to(device)
+        h_0 = torch.zeros(num_layers, 1, attention_hidden_size).to(device)
+        c_0 = torch.zeros(num_layers, 1, attention_hidden_size).to(device)
         return (h_0, c_0)
             
     def forward(self, local_state):
@@ -183,8 +182,9 @@ class GaussianActor(nn.Module):
         return mean, log_std
     
     def forward_lstm(self, global_states, state_sequence, h_c):
+        # lstm_out形状(batch_size, seq_length, attention_hidden_size * num_directions)（1，5，64）
         lstm_out, h_c = self.lstm(state_sequence, h_c)
-        lstm_out = lstm_out[:, -1, :] # 取最后一个时间步的输出
+        lstm_out = lstm_out[:, -1, :] # 取最后一个时间步的输出（batch_size，64）
         attn_features = self.global_attention.forward(lstm_out, global_states, lstm=True)
         x = self.fc_lstm(attn_features)
         mean = self.mean_linear(x)

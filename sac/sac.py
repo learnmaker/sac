@@ -7,12 +7,6 @@ from torch.optim import Adam
 from sac.utils import soft_update, hard_update
 from sac.model import Critic, GaussianActor, DeterministicActor
 
-def to_tensor(hc_np, device):
-    h_np, c_np = hc_np
-    h_t = torch.from_numpy(h_np).to(device)
-    c_t = torch.from_numpy(c_np).to(device)
-    return (h_t, c_t)
-
 class SAC(object):
     def __init__(self, local_dim, action_space, args):
 
@@ -83,8 +77,7 @@ class SAC(object):
             mask_batch = torch.FloatTensor(mask_batch).to(self.device).unsqueeze(1)
             state_seq_batch = torch.FloatTensor(state_seq_batch).to(self.device)
             next_state_seq_batch = torch.FloatTensor(next_state_seq_batch).to(self.device)
-            old_hc_batch = torch.FloatTensor(old_hc_batch).to(self.device)
-            hc_batch = torch.FloatTensor(hc_batch).to(self.device)
+            
         else:
             state_batch, action_batch, reward_batch, next_state_batch, mask_batch = memory.sample(mold, batch_size=batch_size)
             
