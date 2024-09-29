@@ -108,8 +108,8 @@ if __name__ == '__main__':
     parser.add_argument('--env-name', default="MultiAgentEnv",
                         help='环境名称 (default: MultiAgentEnv)')
     # 实验配置
-    parser.add_argument('--exp-case', default="case5",
-                        help='实验配置 (default: case 5)')
+    parser.add_argument('--exp-case', default="case3",
+                        help='实验配置 (default: case 3)')
     # 策略类型
     parser.add_argument('--policy', default="Gaussian",
                         help='策略类型: Gaussian(正态) | Deterministic(确定) (default: Gaussian)')
@@ -177,11 +177,10 @@ if __name__ == '__main__':
     np.random.seed(args.seed)
     
     agent_num = args.server_num * args.ud_num
-    weight = system_config['weight'] # weight = 1
+    weight = system_config['weight'] # weight = 0.5 计算消耗权重
     device = torch.device("cuda" if args.cuda else "cpu")
     state_sequence = [[] for _ in range(agent_num)]
     task_num = system_config['F']  # 任务数 8
-    maxp = system_config['maxp']   # 最大转移概率 70%
     task_utils = load_data('./mydata/task_info/task' + str(task_num) + '_utils.csv')  # 任务集信息[I, O, w，τ]
     task_set_ = task_utils.tolist()
     
@@ -219,7 +218,6 @@ if __name__ == '__main__':
     Ats=[]
     agents = []
     
-    # 动作空间
     sample_low = np.asarray([-1] * (3 * task_num + 2), dtype=np.float32)
     sample_high = np.asarray([1] * (3 * task_num + 2), dtype=np.float32)
     action_space = spaces.Box(low=sample_low, high=sample_high, dtype=np.float32)
@@ -253,7 +251,6 @@ if __name__ == '__main__':
     result_comp = []  # 保存计算消耗评估结果
     
     for i_episode in itertools.count(1):   # <------------------------------------ 回合数
-
         # 初始化
         episode_rewards = np.full(agent_num, 0.)
         episode_step = 0
@@ -451,7 +448,7 @@ if __name__ == '__main__':
             print("----------------------------------------")
             writer.add_scalar('avg_cost/trans_cost', round(print_avg_trans, 2), i_episode)
             writer.add_scalar('avg_cost/comp_cost', round(print_avg_comp, 2), i_episode)
-            data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2), round(print_avg_trans, 2) + weight*round(print_avg_comp, 2)])
+            data3.append([avg_reward, round(print_avg_trans, 2), round(print_avg_comp, 2), (1-weight)*round(print_avg_trans, 2) + weight*round(print_avg_comp, 2)])
 
         # -------------------------------------------------每回合结束写入一次数据-----------------------------------------------------
         file_path1=os.path.join(data_directory, filename1)
