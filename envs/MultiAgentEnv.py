@@ -158,7 +158,7 @@ class MultiAgentEnv(object):
         obs = self.next_state(new_actions, new_valid)
         # print("next_state",obs)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 0.9 # 全局消耗权重
+        total_cost_weight = 1 # 全局消耗权重
         # reward_ = - observation_ ** 2 / 1e12
         if self.offload:
             rewards = - (total_cost_weight * sum(observation + prize) + (1-total_cost_weight) * (observation)) / 1e6

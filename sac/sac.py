@@ -145,6 +145,7 @@ class SAC(object):
         actor_loss.backward()
         self.actor_optim.step()
             
+        # 更新 alpha
         if self.automatic_entropy_tuning:
             alpha_loss = -(self.log_alpha * (log_pi + self.target_entropy).detach()).mean()
 
@@ -158,6 +159,7 @@ class SAC(object):
             alpha_loss = torch.tensor(0.).to(self.device)
             alpha_tlogs = torch.tensor(self.alpha) # For TensorboardX logs
 
+        # 更新 critic_target
         if updates % self.target_update_interval == 0:
             soft_update(self.critic_target, self.critic, self.tau)
             

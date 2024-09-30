@@ -246,7 +246,7 @@ if __name__ == '__main__':
     # ------------------------------------------------------3. 训练-----------------------------------------------------------------------------
     print("环境初始化完毕，开始训练")
     total_numsteps = 0  # 总训练步数
-    updates = 0  # 总更新参数次数
+    updates = np.full(agent_num, 0.)  # 各agent更新参数次数
     result_trans = []  # 保存传输消耗评估结果
     result_comp = []  # 保存计算消耗评估结果
     
@@ -298,28 +298,29 @@ if __name__ == '__main__':
                 mask = 1 if episode_step == env._max_episode_steps else float(not done)
                 masks.append(mask)
 
+                # 经验回放
                 if len(memories[index]) > args.batch_size:
                     # Number of updates per step in environment
                     for i in range(args.updates_per_step):
                         # Update parameters of all the networks
                         critic_1_loss, critic_2_loss, actor_loss, ent_loss, alpha = agent.update_parameters(
-                            index, memories[index], args.batch_size, updates, mold)
+                            index, memories[index], args.batch_size, updates[index], mold)
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates)
+                            ud_index+1)+'_loss/critic_1', critic_1_loss, updates[index])
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'loss/critic_2', critic_2_loss, updates)
+                            ud_index+1)+'_loss/critic_2', critic_2_loss, updates[index])
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice' +
-                                        str(ud_index+1)+'loss/actor', actor_loss, updates)
+                                        str(ud_index+1)+'_loss/actor', actor_loss, updates[index])
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'loss/entropy_loss', ent_loss, updates)
+                            ud_index+1)+'_loss/entropy_loss', ent_loss, updates[index])
                         writer.add_scalar('server'+str(server_index+1)+'_userDevice'+str(
-                            ud_index+1)+'entropy_temprature/alpha', alpha, updates)
+                            ud_index+1)+'_entropy_temprature/alpha', alpha, updates[index])
                         temp_data1.append(critic_1_loss)
                         temp_data1.append(critic_2_loss)
                         temp_data1.append(actor_loss)
                         temp_data1.append(ent_loss)
                         temp_data1.append(alpha)
-                        updates += 1
+                    updates[index] += 1
             
             if temp_data1:
                 data1.append(temp_data1)
