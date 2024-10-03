@@ -7,6 +7,7 @@ import itertools
 import torch
 import sys
 import csv
+import time
 from sac.sac import SAC
 from tool.generate_snrs import generate_snrs
 from tool.sample_from_TimeSeries import generate_request
@@ -102,6 +103,8 @@ sequence_length = 5
 state_sequence = []
 
 if __name__ == '__main__':
+    # 记录开始时间
+    start_time = time.time()
     # ------------------------------------------------------1. 命令行参数设置-----------------------------------------------------------------------
     parser = argparse.ArgumentParser(description='基于SAC算法的多服务器多用户设备的3C问题')
     # 环境名称
@@ -489,3 +492,9 @@ if __name__ == '__main__':
         data2 = []
         data3 = []
     print("不合格动作：",env.getNotValid())
+    # 记录结束时间
+    end_time = time.time()
+
+    # 计算并打印运行时间
+    elapsed_time = end_time - start_time
+    print(f"程序运行时间: {elapsed_time:.2f} 秒")
