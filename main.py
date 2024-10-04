@@ -378,12 +378,11 @@ if __name__ == '__main__':
                 episode_reward = 0
                 trans_cost = 0
                 compute_cost = 0
-                states = env.reset()
                 dones = np.full(agent_num, False)
-                if args.global_info:
-                    if args.lstm:
-                        h_cs = [agent.actor.init_hidden(device) for agent in agents]
-                        
+                states = env.reset()
+                if args.lstm:
+                    h_cs = [agent.actor.init_hidden(device) for agent in agents]
+                    
                 while np.sum(dones == False) > 0:
                     
                     actions=[]
@@ -398,7 +397,7 @@ if __name__ == '__main__':
                         state = states[index]
                         if args.lstm:
                             state_seq = get_state_sequence(index, local_dim)
-                            action, h_cs[index] = agent.select_action_lstm(state_seq, h_cs[index])
+                            action, h_cs[index] = agent.select_action_lstm(index, states, state_seq, h_cs[index])
                         else:
                             if args.global_info:
                                 action = agent.select_action_info(index, states)
