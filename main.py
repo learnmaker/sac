@@ -409,7 +409,7 @@ if __name__ == '__main__':
                     next_states, rewards, new_dones, infos = env.step(actions)
                     if args.lstm:
                         for i in range(agent_num):
-                            add_state_sequence(i, states)
+                            add_state_sequence(i, states[i])
                             
                     episode_reward += np.sum(rewards)
                         
