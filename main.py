@@ -365,13 +365,13 @@ if __name__ == '__main__':
         data2.append(temp_data2)
         
         # 评估
-        eval_freq = 5  # 评估频率
+        eval_freq = 1  # 评估频率
         if i_episode % eval_freq == 0 and args.eval:
             
             avg_reward = 0
             avg_trans_cost = 0
             avg_compute_cost = 0
-            episodes = 5  # 取5次的平均值，计算网络的奖励
+            episodes = 1  # 取5次的平均值，计算网络的奖励
             done_step = 0
             
             for _ in range(episodes):
