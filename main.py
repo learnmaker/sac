@@ -382,7 +382,7 @@ if __name__ == '__main__':
                 dones = np.full(agent_num, False)
                 if args.global_info:
                     if args.lstm:
-                        h_cs = [agent.actor.init_hidden(args.hidden_size, device) for agent in agents]
+                        h_cs = [agent.actor.init_hidden(device) for agent in agents]
                         
                 while np.sum(dones == False) > 0:
                     
