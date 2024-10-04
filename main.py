@@ -259,7 +259,7 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
-        state_sequence = []
+        state_sequence = [[] for _ in range(agent_num)]
         # [agent_num, h0, c0]
         if args.lstm:
             h_cs = [agent.actor.init_hidden(device) for agent in agents]
@@ -382,7 +382,7 @@ if __name__ == '__main__':
                 dones = np.full(agent_num, False)
                 # 初始化 states, state_sequence, hc
                 states = env.reset()
-                state_sequence = []
+                state_sequence = [[] for _ in range(agent_num)]
                 if args.lstm:
                     h_cs = [agent.actor.init_hidden(device) for agent in agents]
                     
