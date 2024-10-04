@@ -141,9 +141,11 @@ class MultiAgentEnv(object):
             if valid == False:
                 new_valid = False
             new_actions.append(action)
+            
         # print("-----------------------------------------------------------------------------------")
         # self.showActions(new_actions)
         # self.showStates()
+        
         # 计算传输消耗和计算消耗
         if self.offload:
             observation, observe_details, details2, prize = self.calc_observation_offload(new_actions)
@@ -152,14 +154,18 @@ class MultiAgentEnv(object):
         for i in range(self.agent_num):
             if self.current_step > MAX_STEPS:
                 dones[i] = True
-
-        # self.show_detail(details2, prize)
+                
+        # if self.offload:
+        #     self.show_detail(details2, prize)
+        # else:
+        #     self.show_detail(details2)
 
         obs = self.next_state(new_actions, new_valid)
-        # print("next_state",obs)
         self.sys_states = obs    # 更新系统状态
-        total_cost_weight = 1 # 全局消耗权重
-        # reward_ = - observation_ ** 2 / 1e12
+        
+        # self.showStates()
+        
+        total_cost_weight = 0.8 # 全局消耗权重
         if self.offload:
             rewards = - (total_cost_weight * sum(observation + prize) + (1-total_cost_weight) * (observation)) / 1e6
         else:
@@ -189,10 +195,10 @@ class MultiAgentEnv(object):
         return self.sys_states.copy()
     
     def calc_observation(self, actions):
-        total_B_R=np.full(self.agent_num, 0.)
-        total_B_P=np.full(self.agent_num, 0.)
-        total_E_R=np.full(self.agent_num, 0.)
-        total_E_P=np.full(self.agent_num, 0.)
+        total_B_R=np.full(self.agent_num, 0)
+        total_B_P=np.full(self.agent_num, 0)
+        total_E_R=np.full(self.agent_num, 0)
+        total_E_P=np.full(self.agent_num, 0)
         
         for agent_i in range(self.agent_num):
             A_t = int(self.sys_states[agent_i][-1])
@@ -202,11 +208,12 @@ class MultiAgentEnv(object):
             S_I_At = self.sys_states[agent_i][A_t]
             S_O_At = self.sys_states[agent_i][num_task + A_t]
             C_R_At = actions[agent_i][0]
-
+            # 输入数据传输消耗
             if S_I_At == 1 or S_O_At == 1:
                 B_R = 0
             else:
                 B_R = (1 - S_I_At) * (1 - S_O_At) * I_At / ((tau - I_At * w_At / (C_R_At * fD)) * math.log2(1 + snr_t))
+            # 计算消耗
             E_R = (1 - S_O_At) * u * (C_R_At * fD) ** 2 * I_At * w_At
             
             total_B_R[agent_i] = B_R
@@ -216,6 +223,7 @@ class MultiAgentEnv(object):
 
             E_P = 0
             B_P = 0
+            # 主动传输消耗
             for idx in range(num_task):
                 C_P = 0
                 E_P += u * (C_P * fD) ** 2 * self.task_set[idx][0] * self.task_set[idx][2]  # always 0 since C_P is zero
@@ -232,14 +240,14 @@ class MultiAgentEnv(object):
         # action: [CR_At, CP_f (all tasks), b_f (all tasks), dSI_f (all tasks), dSO_f(all tasks), O_u, O_m]
         # object: calculate B_R(被动传输带宽) + B_P(主动传输带宽) + E_R(计算消耗) + E_P()
         """
-        total_B_R=np.full(self.agent_num, 0.)
-        total_B_P=np.full(self.agent_num, 0.)
-        total_E_R=np.full(self.agent_num, 0.)
-        total_E_P=np.full(self.agent_num, 0.)
+        total_B_R=np.full(self.agent_num, 0)
+        total_B_P=np.full(self.agent_num, 0)
+        total_E_R=np.full(self.agent_num, 0)
+        total_E_P=np.full(self.agent_num, 0)
 
-        total_prize = np.full(self.agent_num, 0.)
-        total_I = np.full(self.agent_num, 0.)
-        C_time = np.full(self.agent_num, 0.)
+        total_prize = np.full(self.agent_num, 0)
+        total_I = np.full(self.agent_num, 0)
+        C_time = np.full(self.agent_num, 0)
         self.task_lists = [[] for _ in range(self.agent_num)]
         
         # 更新任务列表
@@ -436,6 +444,7 @@ class MultiAgentEnv(object):
         """
         # 数据准备
         A_t = int(self.sys_states[agent_i][-1]) # 请求任务
+        S_I_At = self.sys_states[agent_i][A_t] # 请求任务输入缓存
         S_O_At = self.sys_states[agent_i][num_task + A_t] # 请求任务输出缓存
         I_At = self.task_set[A_t][0] # 请求任务输入大小
         w_At = self.task_set[A_t][2] # 每比特所需的计算周期
@@ -586,8 +595,8 @@ class MultiAgentEnv(object):
 
         # print(action[1 + num_task:1 + num_task * 2], action[1 + num_task * 2:1 + num_task * 3], self.sys_states)
         # --------------------------------------------------修正卸载对象---------------------------------------
-        # 如果卸载对象是自己 或者 自己有请求任务的输出缓存
-        if action[-1] == agent_i or S_O_At == 1:
+        # 如果卸载对象是自己 或者 自己有请求任务的输出缓存、输入数据
+        if action[-1] == agent_i or S_O_At == 1 or S_I_At == 1:
             action[-1] = -1
             
         if self.test_cache_exceed(I_f, O_f, S_I_f, S_O_f, action[1+num_task:1+num_task*2], action[1+num_task*2:1+num_task*3]):
@@ -619,11 +628,18 @@ class MultiAgentEnv(object):
     def get_cach_state(self):
         return [[row[i] for i in range(len(row) - 1)] for row in self.sys_states]
     
-    def show_detail(self, detail2, prize):
-        print("被动传输消耗, 主动传输消耗, 计算消耗, 奖励")
-        detail2 = np.column_stack(detail2)
-        for i in range(self.agent_num):
-            print("agent",i,detail2[i], prize[i])
+    def show_detail(self, detail2, prize=None):
+        if prize != None:
+            print("被动传输消耗, 主动传输消耗, 计算消耗, 奖励")
+            detail2 = np.column_stack(detail2)
+            for i in range(self.agent_num):
+                print("agent",i,detail2[i][0], detail2[i][1], detail2[i][2], prize[i])
+        else:
+            print("被动传输消耗, 主动传输消耗, 计算消耗")
+            detail2 = np.column_stack(detail2)
+            for i in range(self.agent_num):
+                print("agent",i,detail2[i][0], detail2[i][1], detail2[i][2])
+            
     
     def showActions(self, actions):
         for i, action in enumerate(actions):

@@ -60,7 +60,7 @@ def set_fieldnames(agent_num):
     data2.append(fd2)
     data3.append(fd3)
     return
-
+    
 # 添加时间序列
 def add_state_sequence(index, state):
     if len(state_sequence[index]) < sequence_length:
@@ -99,7 +99,7 @@ filename3 = "eval.csv"
 data3 = []
 
 # LSTM序列长度
-sequence_length = 5
+sequence_length = 10
 state_sequence = []
 
 if __name__ == '__main__':
@@ -147,8 +147,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='批量大小 (default: 512)')
     # 最大迭代次数
-    parser.add_argument('--max_episode', type=int, default=300, metavar='N',
-                        help='最大迭代次数 (default: 300)')
+    parser.add_argument('--max_episode', type=int, default=500, metavar='N',
+                        help='最大迭代次数 (default: 500)')
     # 隐藏层大小
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='隐藏层大小 (default: 256)')
@@ -259,6 +259,7 @@ if __name__ == '__main__':
         episode_step = 0
         dones = np.full(agent_num, False) # 本回合各agent是否结束
         states = env.reset()
+        state_sequence = []
         # [agent_num, h0, c0]
         if args.lstm:
             h_cs = [agent.actor.init_hidden(device) for agent in agents]
@@ -365,13 +366,13 @@ if __name__ == '__main__':
         data2.append(temp_data2)
         
         # 评估
-        eval_freq = 1  # 评估频率
+        eval_freq = 10  # 评估频率
         if i_episode % eval_freq == 0 and args.eval:
             
             avg_reward = 0
             avg_trans_cost = 0
             avg_compute_cost = 0
-            episodes = 1  # 取5次的平均值，计算网络的奖励
+            episodes = 10  # 取5次的平均值，计算网络的奖励
             done_step = 0
             
             for _ in range(episodes):
@@ -379,14 +380,18 @@ if __name__ == '__main__':
                 trans_cost = 0
                 compute_cost = 0
                 dones = np.full(agent_num, False)
+                # 初始化 states, state_sequence, hc
                 states = env.reset()
+                state_sequence = []
                 if args.lstm:
                     h_cs = [agent.actor.init_hidden(device) for agent in agents]
                     
                 while np.sum(dones == False) > 0:
                     
                     actions=[]
-                    
+                    if args.lstm:
+                        old_hc = h_cs
+                        
                     for index in range(agent_num):
                         
                         done = dones[index]

@@ -8,14 +8,14 @@
             "program": "${workspaceFolder}/main.py",
             "console": "integratedTerminal",
             "args": [
-                "--exp-case", "case5",
+                "--exp-case", "case3",
                 "--automatic_entropy_tuning",
-                "--eval",
+                // "--eval",
                 "--global-info",
-                "--lstm",
+                // "--lstm",
                 "--cuda",
                 "--max_episode", "200",
-                "--start_steps", "0"
+                // "--start_steps", "0"
             ],
             "justMyCode": false
         }
